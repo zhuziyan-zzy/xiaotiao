@@ -1,0 +1,92 @@
+import os
+from fastapi import APIRouter, HTTPException
+from schemas import ArticleAnalyzeRequest, ArticleAnalyzeResponse
+from services.llm import call_claude_json
+from services.research_store import search_rag_chunks
+
+router = APIRouter(prefix="/api/v1/article", tags=["article"])
+
+def load_prompt(filename: str) -> str:
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", filename)
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+@router.post("/analyze", response_model=ArticleAnalyzeResponse)
+async def analyze_article(req: ArticleAnalyzeRequest):
+    if len(req.source_text.split()) > 3500:
+        raise HTTPException(status_code=422, detail="Text exceeds 3500 words limit.")
+
+    system_prompt = load_prompt("article_analyze.txt")
+    
+    context_block = ""
+    if req.grounded:
+        contexts = search_rag_chunks(req.source_text, top_k=req.top_k)
+        if contexts:
+            context_lines = []
+            for idx, item in enumerate(contexts, start=1):
+                title = item.get("title") or item.get("source_id") or f"source-{idx}"
+                chunk = str(item.get("chunk_text") or "").strip()
+                context_lines.append(f"[{idx}] {title}\n{chunk}")
+            context_block = "\n\nGrounded Context (must cite where useful):\n" + "\n\n".join(context_lines)
+
+    user_prompt = f"""
+Analysis Mode: {req.analysis_mode}
+
+Source Text:
+{req.source_text}
+{context_block}
+    """
+
+    data = await call_claude_json(system_prompt, user_prompt, max_tokens=4000)
+
+    try:
+        paragraphs_raw = data.get("paragraphs", []) if isinstance(data, dict) else []
+        normalized_paragraphs = []
+        for p in paragraphs_raw:
+            if not isinstance(p, dict):
+                continue
+            original = p.get("original") or ""
+            explanation = p.get("explanation") or p.get("explanation_zh") or p.get("analysis") or ""
+            if original.strip() and explanation.strip():
+                normalized_paragraphs.append({"original": original, "explanation": explanation})
+
+        terms_raw = data.get("terms", []) if isinstance(data, dict) else []
+        if not terms_raw:
+            for p in paragraphs_raw:
+                if isinstance(p, dict) and isinstance(p.get("terms"), list):
+                    terms_raw.extend(p.get("terms"))
+        normalized_terms = []
+        for t in terms_raw:
+            if not isinstance(t, dict):
+                continue
+            term = t.get("term") or t.get("word") or ""
+            definition = t.get("definition_zh") or t.get("zh") or ""
+            example = t.get("example") or t.get("in_sentence") or ""
+            if term and definition:
+                normalized_terms.append({"term": term, "zh": definition, "example": example})
+
+        key_raw = data.get("key_sentences", []) if isinstance(data, dict) else []
+        normalized_keys = []
+        for item in key_raw:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text") or item.get("sentence") or ""
+            reason = item.get("reason") or ""
+            if text and reason:
+                normalized_keys.append({"text": text, "reason": reason})
+
+        if req.grounded:
+            contexts = search_rag_chunks(req.source_text, top_k=req.top_k)
+            for idx, c in enumerate(contexts, start=1):
+                title = c.get("title") or c.get("source_id") or f"source-{idx}"
+                normalized_keys.append({"text": f"[引用 {idx}] {title}", "reason": "Grounded evidence source"})
+
+        normalized = {
+            "paragraphs": normalized_paragraphs,
+            "terms": normalized_terms,
+            "key_sentences": normalized_keys,
+        }
+        response = ArticleAnalyzeResponse(**normalized)
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM returned malformed data: {e}. Raw data: {data}")

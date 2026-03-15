@@ -1,0 +1,24 @@
+xiaotiao-server/.env
+xiaotiao-server/db/*.db
+db/*.db
+.DS_Store
+
+# Frontend
+xiaotiao-app/node_modules/
+xiaotiao-app/dist/
+xiaotiao-app/.vite/
+
+# Python
+xiaotiao-server/.venv/
+xiaotiao-server/venv/
+xiaotiao-server/__pycache__/
+xiaotiao-server/**/*.pyc
+
+# Local runtime files
+*.log
+.env
+
+# Local tooling / temp files
+.claude/
+暂不需要使用的文件/
+*.pages

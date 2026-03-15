@@ -1,0 +1,70 @@
+import os
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - fallback for minimal runtime env
+    def load_dotenv(dotenv_path=None, override=False, *args, **kwargs):
+        path = Path(dotenv_path or Path(__file__).resolve().parent / ".env")
+        if not path.exists():
+            return False
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("'").strip('"')
+            if override or key not in os.environ:
+                os.environ[key] = value
+        return True
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+from db.database import init_db
+from routers import topic, article, translation, vocab, research
+
+try:
+    from routers import multimodal
+except Exception:
+    multimodal = None
+
+app = FastAPI(title="XiaoTiao Server", version="1.0.0")
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
+
+# Configure CORS for local development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "db": "connected"} # We will update db status once connected
+
+app.include_router(topic.router)
+app.include_router(article.router)
+app.include_router(translation.router)
+app.include_router(vocab.router)
+app.include_router(research.router)
+if multimodal:
+    app.include_router(multimodal.router)
+
+if __name__ == "__main__":
+    import uvicorn
+    # If run directly
+    uvicorn.run("main:app", host="0.0.0.0", port=3000, reload=True)

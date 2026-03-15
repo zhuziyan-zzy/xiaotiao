@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>小挑 — 涉外法治英语学习平台</title>
+  <meta name="description" content="小挑 XiaoTiao — 涉外法治语境下的智能英语学习工具，提供主题探索、文章解读、翻译训练三大核心模块。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+SC:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+</head>
+<body>
+  <!-- Atmospheric Background -->
+  <div class="bg-atmosphere">
+    <div class="orb orb--green"></div>
+    <div class="orb orb--orange"></div>
+    <div class="orb orb--pink"></div>
+  </div>
+  <div class="bg-noise"></div>
+
+  <!-- Liquid Glass Navbar -->
+  <nav class="navbar" id="navbar">
+    <div class="navbar__inner">
+      <div class="navbar__brand" onclick="location.hash='/'">
+        <div class="navbar__logo">挑</div>
+        <div class="navbar__title"><span>XiaoTiao</span></div>
+      </div>
+      <!-- Desktop Segmented Nav -->
+      <div class="navbar__nav segmented" id="navbar-segmented">
+        <div class="segmented__slider" id="navbar-slider"></div>
+        <a href="#/" class="nav-link segmented__btn" data-route="/">
+          首页
+        </a>
+        <a href="#/topic" class="nav-link segmented__btn" data-route="/topic">
+          <span class="nav-dot" style="background:var(--topic)"></span>主题探索
+        </a>
+        <a href="#/article" class="nav-link segmented__btn" data-route="/article">
+          <span class="nav-dot" style="background:var(--article)"></span>文章实验室
+        </a>
+        <a href="#/translation" class="nav-link segmented__btn" data-route="/translation">
+          <span class="nav-dot" style="background:var(--translation)"></span>翻译工作室
+        </a>
+        <a href="#/vocab" class="nav-link segmented__btn" data-route="/vocab">
+          <span class="nav-dot" style="background:#fbbf24"></span>生词本
+        </a>
+        <a href="#/progress" class="nav-link segmented__btn" data-route="/progress">
+          <span class="nav-dot" style="background:#4ade80"></span>学习进度
+        </a>
+      </div>
+
+    </div>
+  </nav>
+
+  <!-- Page Content Container -->
+  <main class="page" id="app"></main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <p class="footer__text">
+        小挑 XiaoTiao © 2026 · 涉外法治英语学习平台 · 
+        <a href="#">V1 MVP</a>
+      </p>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

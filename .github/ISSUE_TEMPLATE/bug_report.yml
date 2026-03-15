@@ -1,0 +1,36 @@
+name: Bug report
+description: 反馈一个可复现的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: desc
+    attributes:
+      label: 问题描述
+      description: 清楚描述现象和预期行为
+      placeholder: 例如：模块 01 中点击生成后卡死，预期应返回文章结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开...
+        2. 输入...
+        3. 点击...
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 环境信息
+      placeholder: macOS/Windows, 浏览器版本, Node/Python 版本
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志/截图（可选）
+      description: 可粘贴报错堆栈或上传截图
