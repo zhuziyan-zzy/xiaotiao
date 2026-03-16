@@ -6,16 +6,26 @@ import {
   renderArticleLab, initArticleLab,
   renderTranslationStudio, initTranslationStudio
 } from './pages.js';
+import { renderLoginPage, initLoginPage } from './pages/login_page.js';
 import { renderVocabPage, initVocabPage } from './vocab_page.js';
 import { renderProgressPage, initProgressPage } from './progress_page.js';
 import { renderPaperPage, initPaperPage } from './pages/paper_page.js';
 import { renderPaperDetailPage, initPaperDetailPage } from './pages/paper_detail_page.js';
 import { renderPaperReaderPage, initPaperReaderPage } from './pages/paper_reader_page.js';
 import { renderTrackerPage, initTrackerPage } from './pages/tracker_page.js';
+import { isAuthed, logout } from './auth.js';
+import { initGlobalWordSelector, destroyGlobalWordSelector } from './components/word_selector.js';
 
 const router = new Router('app');
 
-router.register('/', renderHome);
+router.setGuard((path) => {
+  if (!isAuthed() && path !== '/') return '/';
+  if (isAuthed() && path === '/') return '/home';
+  return null;
+});
+
+router.register('/', renderLoginPage, initLoginPage);
+router.register('/home', renderHome);
 router.register('/papers', renderPaperPage, initPaperPage);
 router.register('/papers/:id', renderPaperDetailPage, initPaperDetailPage);
 router.register('/papers/:id/read', renderPaperReaderPage, initPaperReaderPage);
@@ -45,6 +55,19 @@ function initGlobalInteractions() {
 
   // Interactive card tilts in JS for any element requesting it
   // (Currently not implemented, placeholder for future feature)
+}
+
+function initAuthActions() {
+  const logoutBtn = document.getElementById('btn-logout');
+  if (!logoutBtn) return;
+  logoutBtn.addEventListener('click', async () => {
+    logoutBtn.disabled = true;
+    logoutBtn.textContent = '退出中...';
+    await logout();
+    logoutBtn.textContent = '退出登录';
+    logoutBtn.disabled = false;
+    window.location.hash = '#/';
+  });
 }
 
 // ── Theme Config System ──────────────────────
@@ -199,6 +222,12 @@ function initSegmentedControls() {
   });
 }
 
+// Boot
+initGlobalInteractions();
+initThemeConfig();
+initSegmentedControls();
+initAuthActions();
+
 // ── 3. Navbar Scroll Enhancement ─────────────
 // Increases glass opacity when scrolled, creating depth.
 
@@ -326,6 +355,11 @@ router.resolve = function () {
       const articleInput = document.getElementById('article-input');
       if (articleInput) {
         articleInput.dispatchEvent(new Event('input'));
+      }
+
+      // Initialize global word selector on all authenticated pages
+      if (!document.body.classList.contains('auth-view')) {
+        initGlobalWordSelector();
       }
     });
   }

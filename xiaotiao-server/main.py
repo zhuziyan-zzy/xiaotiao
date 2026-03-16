@@ -24,8 +24,13 @@ except Exception:  # pragma: no cover - fallback for minimal runtime env
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-from db.database import init_db, run_migrations
-from routers import topic, article, translation, vocab, research, papers, tracker, collections
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+from db.auth_db import init_auth_db
+from db.database import init_db, run_migrations, get_user_db_path
+from services.auth_service import extract_token, get_user_from_token
+from routers import auth, topic, article, translation, vocab, research, papers, tracker, collections
 
 try:
     from routers import multimodal
@@ -41,6 +46,7 @@ app = FastAPI(
 
 @app.on_event("startup")
 def on_startup():
+    init_auth_db()
     init_db()
     run_migrations()
 
@@ -58,6 +64,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PUBLIC_PATHS = {
+    "/health",
+    "/auth/login",
+    "/auth/register",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+}
+
+
+@app.middleware("http")
+async def auth_guard(request: Request, call_next):
+    path = request.url.path
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    if path in PUBLIC_PATHS or path.startswith("/docs"):
+        return await call_next(request)
+    token = extract_token(request)
+    user = get_user_from_token(token)
+    if not user:
+        return JSONResponse(status_code=401, content={"detail": "未登录或登录已失效。"})
+    request.state.user = user
+    request.state.db_path = get_user_db_path(user["id"])
+    return await call_next(request)
+
 @app.get(
     "/health",
     summary="健康检查",
@@ -74,6 +105,7 @@ app.include_router(research.router)
 app.include_router(papers.router)
 app.include_router(tracker.router)
 app.include_router(collections.router)
+app.include_router(auth.router)
 if multimodal:
     app.include_router(multimodal.router)
 

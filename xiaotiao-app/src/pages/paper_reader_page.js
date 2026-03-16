@@ -1,5 +1,7 @@
 // PDF Reader Page — /papers/:id/read
 import { streamAI, renderMarkdown, startSimulatedProgress } from '../utils/stream.js';
+import { authFetch } from '../utils/http.js';
+import { addExtraButtons } from '../components/word_selector.js';
 
 const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
@@ -53,14 +55,6 @@ export function renderPaperReaderPage(params) {
         </div>
       </div>
 
-      <!-- Selection Toolbar (hidden, shown on text select) -->
-      <div id="selection-toolbar" style="display:none;position:fixed;z-index:200;background:var(--glass-bg-solid);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.1);border-radius:12px;padding:6px;box-shadow:var(--shadow-elevated);display:none;gap:4px;">
-        <button class="sel-btn" data-action="translate" style="padding:6px 12px;border:none;background:none;cursor:pointer;color:var(--text-primary);font-size:0.85rem;border-radius:8px;">翻译</button>
-        <button class="sel-btn" data-action="summary" style="padding:6px 12px;border:none;background:none;cursor:pointer;color:var(--text-primary);font-size:0.85rem;border-radius:8px;">摘要</button>
-        <button class="sel-btn" data-action="vocab" style="padding:6px 12px;border:none;background:none;cursor:pointer;color:var(--text-primary);font-size:0.85rem;border-radius:8px;">生词本</button>
-        <button class="sel-btn" data-action="highlight" style="padding:6px 12px;border:none;background:none;cursor:pointer;color:var(--text-primary);font-size:0.85rem;border-radius:8px;">高亮</button>
-      </div>
-
       <!-- Selection Result Popover -->
       <div id="selection-result" style="display:none;position:fixed;z-index:201;background:var(--glass-bg-solid);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.1);border-radius:12px;padding:16px;box-shadow:var(--shadow-elevated);max-width:400px;max-height:300px;overflow-y:auto;"></div>
     </div>
@@ -76,13 +70,11 @@ export async function initPaperReaderPage(params) {
   let pdfDoc = null;
   let observer = null;
   let pdfjsLibInstance = null;
-  let lastSelectionAction = null;
-  let lastSelectionText = '';
   let lastReaderQuestion = '';
 
   // Load paper info
   try {
-    const res = await fetch(`${API_BASE}/papers/${paperId}`);
+    const res = await authFetch(`${API_BASE}/papers/${paperId}`);
     const paper = await res.json();
     document.getElementById('reader-title').textContent = paper.title;
   } catch (e) { /* ignore */ }
@@ -99,7 +91,7 @@ export async function initPaperReaderPage(params) {
     }
 
     // Fetch PDF
-    const pdfRes = await fetch(`${API_BASE}/papers/${paperId}/pdf`);
+    const pdfRes = await authFetch(`${API_BASE}/papers/${paperId}/pdf`);
     if (!pdfRes.ok) throw new Error('无法获取 PDF');
 
     const contentType = pdfRes.headers.get('content-type');
@@ -195,6 +187,16 @@ export async function initPaperReaderPage(params) {
           pagesRead.add(pageNum);
           document.getElementById('pages-read-count').textContent = `已读 ${pagesRead.size} 页`;
           document.getElementById('page-indicator').textContent = `第 ${pageNum} / ${totalPages} 页`;
+
+          // Persist reading progress (debounced)
+          clearTimeout(window.__progressSaveTimer);
+          window.__progressSaveTimer = setTimeout(() => {
+            authFetch(`${API_BASE}/papers/${paperId}/reading-progress`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pages_read: pagesRead.size, total_pages: totalPages })
+            }).catch(() => {});
+          }, 2000);
 
           // Auto-generate summary for new pages
           if (!summariesGenerated.has(pageNum)) {
@@ -309,64 +311,25 @@ export async function initPaperReaderPage(params) {
     }
   });
 
-  // Selection toolbar
-  const pdfContainer = document.getElementById('pdf-container');
-  const toolbar = document.getElementById('selection-toolbar');
+  // Register paper-reader-specific buttons on the unified global toolbar
   const resultPopover = document.getElementById('selection-result');
-
-  let currentPageForSelection = null;
-  pdfContainer.addEventListener('mouseup', (e) => {
-    const sel = window.getSelection();
-    const text = sel.toString().trim();
-    if (text.length > 0) {
-      const pageEl = e.target.closest('[data-page-num]');
-      currentPageForSelection = pageEl ? parseInt(pageEl.dataset.pageNum, 10) : null;
-      toolbar.style.display = 'flex';
-      toolbar.style.left = `${e.clientX - 100}px`;
-      toolbar.style.top = `${e.clientY - 50}px`;
-      toolbar.dataset.selectedText = text;
-    } else {
-      toolbar.style.display = 'none';
-      resultPopover.style.display = 'none';
-      currentPageForSelection = null;
-    }
-  });
-
-  document.addEventListener('mousedown', (e) => {
-    if (!toolbar.contains(e.target) && !resultPopover.contains(e.target)) {
-      toolbar.style.display = 'none';
-      resultPopover.style.display = 'none';
-    }
-  });
+  let lastSelectionAction = null;
+  let lastSelectionText = '';
 
   const runSelectionAction = async (action, selectedText) => {
     if (!selectedText) return;
     lastSelectionAction = action;
     lastSelectionText = selectedText;
 
-    if (action === 'vocab') {
-      try {
-        await fetch(`${API_BASE}/vocab`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ word: selectedText, source: 'paper', domain: 'general' })
-        });
-        window.showToast(`"${selectedText}" 已加入生词本`, 'success');
-      } catch (e) {
-        window.showToast('加入失败', 'error');
-      }
-      return;
-    }
-
     if (action === 'highlight') {
       try {
-        await fetch(`${API_BASE}/papers/${paperId}/annotations`, {
+        await authFetch(`${API_BASE}/papers/${paperId}/annotations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'highlight',
             selected_text: selectedText,
-            page_number: currentPageForSelection
+            page_number: null
           })
         });
         window.showToast('已添加高亮', 'success');
@@ -377,6 +340,8 @@ export async function initPaperReaderPage(params) {
     }
 
     resultPopover.style.display = 'block';
+    resultPopover.style.left = `${window.innerWidth / 2 - 200}px`;
+    resultPopover.style.top = `${window.innerHeight / 3}px`;
     resultPopover.innerHTML = `
       <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
         <button class="btn btn--ghost btn--sm" id="btn-selection-regenerate">🔄 重新生成</button>
@@ -420,17 +385,34 @@ export async function initPaperReaderPage(params) {
     }
   };
 
-  toolbar.querySelectorAll('.sel-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const action = btn.dataset.action;
-      const selectedText = toolbar.dataset.selectedText;
-      toolbar.style.display = 'none';
-      const rect = btn.getBoundingClientRect();
-      resultPopover.style.left = `${rect.left}px`;
-      resultPopover.style.top = `${rect.bottom + 8}px`;
-      await runSelectionAction(action, selectedText);
-    });
+  // Close result popover on click outside
+  document.addEventListener('mousedown', (e) => {
+    if (resultPopover && !resultPopover.contains(e.target)) {
+      resultPopover.style.display = 'none';
+    }
   });
+
+  // Add extra buttons to the global word selector toolbar
+  addExtraButtons([
+    {
+      label: '翻译',
+      icon: '🌐',
+      className: 'word-selector-bar__btn--extra',
+      onClick: (text) => runSelectionAction('translate', text)
+    },
+    {
+      label: '摘要',
+      icon: '📝',
+      className: 'word-selector-bar__btn--extra',
+      onClick: (text) => runSelectionAction('summary', text)
+    },
+    {
+      label: '高亮',
+      icon: '🖍️',
+      className: 'word-selector-bar__btn--extra',
+      onClick: (text) => runSelectionAction('highlight', text)
+    }
+  ]);
 
   // Reader chat
   document.getElementById('btn-reader-chat').addEventListener('click', async () => {

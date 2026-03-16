@@ -1,10 +1,9 @@
 """主题追踪路由：话题追踪与 ArXiv 论文发现。"""
 
-import asyncio
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -59,15 +58,13 @@ def delete_topic_route(topic_id: str, db=Depends(get_db)):
     summary="立即检查",
     description="立即触发该主题的论文检索。",
 )
-async def check_now(topic_id: str, background_tasks: BackgroundTasks, db=Depends(get_db)):
+async def check_now(topic_id: str, background_tasks: BackgroundTasks, request: Request, db=Depends(get_db)):
     row = db.execute("SELECT * FROM topics WHERE id=?", (topic_id,)).fetchone()
     if not row:
         raise HTTPException(404, "未找到该主题。")
 
-    background_tasks.add_task(
-        asyncio.to_thread,
-        lambda: asyncio.run(search_arxiv_for_topic(topic_id, row["title"]))
-    )
+    db_path = request.state.db_path if hasattr(request, "state") else None
+    background_tasks.add_task(search_arxiv_for_topic, topic_id, row["title"], db_path=db_path)
     return {"status": "checking", "topic_id": topic_id}
 
 

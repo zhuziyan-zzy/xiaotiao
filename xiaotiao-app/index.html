@@ -22,14 +22,14 @@
   <!-- Liquid Glass Navbar -->
   <nav class="navbar" id="navbar">
     <div class="navbar__inner">
-      <div class="navbar__brand" onclick="location.hash='/'">
+      <div class="navbar__brand" onclick="location.hash='/home'">
         <div class="navbar__logo">译</div>
         <div class="navbar__title"><span>再译</span></div>
       </div>
       <!-- Desktop Segmented Nav -->
       <div class="navbar__nav segmented" id="navbar-segmented">
         <div class="segmented__slider" id="navbar-slider"></div>
-        <a href="#/" class="nav-link segmented__btn" data-route="/">
+        <a href="#/home" class="nav-link segmented__btn" data-route="/home">
           首页
         </a>
         <a href="#/papers" class="nav-link segmented__btn" data-route="/papers">
@@ -53,6 +53,9 @@
         <a href="#/progress" class="nav-link segmented__btn" data-route="/progress">
           <span class="nav-dot" style="background:#4ade80"></span>学习进度
         </a>
+      </div>
+      <div class="navbar__actions">
+        <button class="btn btn--ghost btn--sm" id="btn-logout">退出登录</button>
       </div>
 
     </div>

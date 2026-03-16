@@ -151,7 +151,7 @@ export function renderHome() {
           </div>
 
           <!-- Tracker Card -->
-          <div class="module-card" onclick="location.hash='/tracker'" id="card-tracker" style="border-top: 3px solid #f472b6;">
+          <div class="module-card module-card--tracker" onclick="location.hash='/tracker'" id="card-tracker">
             <div class="module-card__icon">🔔</div>
             <div class="module-card__subtitle">模块 · 追踪</div>
             <h3 class="module-card__title">主题追踪 (Tracker)</h3>
@@ -387,131 +387,6 @@ export function initTopicExplorer() {
     if (lengthEl) lengthEl.textContent = `${length} 词`;
   };
 
-  if (window.__topicQuickAddCleanup) {
-    window.__topicQuickAddCleanup();
-    window.__topicQuickAddCleanup = null;
-  }
-
-  let quickAddWord = '';
-  let quickAddWarnMessage = '';
-  const quickAddToolbar = document.createElement('div');
-  quickAddToolbar.className = 'selection-quickbar';
-  quickAddToolbar.innerHTML = `<button class="selection-quickbar__btn" type="button">+ 生词本</button>`;
-  document.body.appendChild(quickAddToolbar);
-  const quickAddBtn = quickAddToolbar.querySelector('.selection-quickbar__btn');
-
-  const hideQuickAdd = () => {
-    quickAddToolbar.classList.remove('is-visible');
-    quickAddWord = '';
-    quickAddWarnMessage = '';
-  };
-
-  const normalizeSelectionWord = (raw) => {
-    const cleaned = raw
-      .replace(/[\r\n\t]+/g, ' ')
-      .replace(/[，。！？、；：,.!?;:()[\]{}"“”]/g, ' ')
-      .trim();
-    if (!cleaned) return null;
-    const words = cleaned.split(/\s+/).filter(Boolean);
-    if (!words.length) return null;
-    if (words.length > 4) {
-      return { warning: '请选择 1-4 个词后再加入生词本' };
-    }
-    const enLike = words.every((w) => /^[A-Za-z][A-Za-z'-]*$/.test(w));
-    if (!enLike) {
-      return { warning: '仅支持加入英文词汇，请重新选择' };
-    }
-    return { word: words.join(' ').toLowerCase() };
-  };
-
-  const updateQuickAddBySelection = () => {
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-      hideQuickAdd();
-      return;
-    }
-
-    const range = sel.getRangeAt(0);
-    const anchorNode = range.commonAncestorContainer;
-    const anchorEl = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
-    if (!anchorEl || !resultArea.contains(anchorEl)) {
-      hideQuickAdd();
-      return;
-    }
-
-    const parsed = normalizeSelectionWord(sel.toString());
-    if (!parsed) {
-      hideQuickAdd();
-      return;
-    }
-    quickAddWord = parsed.word || '';
-    quickAddWarnMessage = parsed.warning || '';
-
-    const rect = range.getBoundingClientRect();
-    if (!rect || (rect.width === 0 && rect.height === 0)) {
-      hideQuickAdd();
-      return;
-    }
-
-    const top = window.scrollY + rect.top - 10;
-    const left = window.scrollX + rect.left + rect.width / 2;
-    quickAddToolbar.style.top = `${Math.max(window.scrollY + 8, top)}px`;
-    quickAddToolbar.style.left = `${Math.max(16, Math.min(window.scrollX + window.innerWidth - 16, left))}px`;
-    quickAddToolbar.classList.add('is-visible');
-  };
-
-  quickAddBtn.addEventListener('click', async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (quickAddWarnMessage) {
-      showToast(quickAddWarnMessage, 'warning');
-      return;
-    }
-    if (!quickAddWord) return;
-
-    const selectedDomain = document.querySelector('#topic-domain-checklist input:checked');
-    const domain = selectedDomain ? selectedDomain.value : 'general';
-
-    quickAddBtn.disabled = true;
-    quickAddBtn.textContent = '加入中...';
-    try {
-      await createVocabItem({
-        word: quickAddWord,
-        domain,
-        source: 'topic_selection'
-      });
-      showToast(`已加入生词本：${quickAddWord}`, 'success');
-    } catch (err) {
-      const message = String(err?.message || '');
-      if (message.includes('already exists')) {
-        showToast(`生词本已存在：${quickAddWord}`, 'warning');
-      } else {
-        showToast(`加入失败：${message}`, 'error');
-      }
-    } finally {
-      quickAddBtn.disabled = false;
-      quickAddBtn.textContent = '+ 生词本';
-      window.getSelection()?.removeAllRanges();
-      hideQuickAdd();
-    }
-  });
-
-  const onDocumentMouseUp = () => setTimeout(updateQuickAddBySelection, 0);
-  const onDocumentKeyUp = (e) => {
-    if (e.key.includes('Arrow') || e.key === 'Shift') {
-      setTimeout(updateQuickAddBySelection, 0);
-    }
-  };
-  const onDocumentMouseDown = (e) => {
-    if (!quickAddToolbar.contains(e.target)) hideQuickAdd();
-  };
-  const onWindowScroll = () => hideQuickAdd();
-
-  document.addEventListener('mouseup', onDocumentMouseUp);
-  document.addEventListener('keyup', onDocumentKeyUp);
-  document.addEventListener('mousedown', onDocumentMouseDown);
-  window.addEventListener('scroll', onWindowScroll, true);
 
   const openConfig = () => {
     configOverlay.classList.add('is-open');
@@ -752,15 +627,6 @@ export function initTopicExplorer() {
 
   // FIX 4: Config starts minimized, FAB is visible by default
   updateSummaryBar();
-
-  window.__topicQuickAddCleanup = () => {
-    document.removeEventListener('mouseup', onDocumentMouseUp);
-    document.removeEventListener('keyup', onDocumentKeyUp);
-    document.removeEventListener('mousedown', onDocumentMouseDown);
-    window.removeEventListener('scroll', onWindowScroll, true);
-    document.removeEventListener('keydown', onEscape);
-    quickAddToolbar.remove();
-  };
 }
 
 // Global handoff function

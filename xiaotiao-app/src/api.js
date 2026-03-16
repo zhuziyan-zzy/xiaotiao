@@ -1,3 +1,5 @@
+import { authFetch } from './utils/http.js';
+
 // Real AI generation service — calls POST /...
 const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
@@ -21,7 +23,7 @@ async function requestJSON({ endpoint, method = 'POST', payload, timeoutMs, retr
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         try {
-            const response = await fetch(url, {
+            const response = await authFetch(url, {
                 method,
                 headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
                 body: method === 'GET' ? undefined : JSON.stringify(payload),

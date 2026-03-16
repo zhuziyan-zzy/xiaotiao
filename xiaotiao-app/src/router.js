@@ -3,6 +3,7 @@ export class Router {
   constructor(containerId) {
     this.container = document.getElementById(containerId);
     this.routes = [];
+    this.guard = null;
     window.addEventListener('hashchange', () => this.resolve());
   }
 
@@ -23,6 +24,11 @@ export class Router {
     return this;
   }
 
+  setGuard(guardFn) {
+    this.guard = guardFn;
+    return this;
+  }
+
   resolve() {
     const rawHash = window.location.hash.slice(1) || '/';
     const hashPath = rawHash.split('?')[0] || '/';
@@ -30,12 +36,23 @@ export class Router {
     let matched = null;
     let params = {};
 
+    if (typeof this.guard === 'function') {
+      const redirect = this.guard(normalized);
+      if (redirect && redirect !== normalized) {
+        window.location.hash = `#${redirect}`;
+        return;
+      }
+    }
+
+    document.body.classList.toggle('auth-view', normalized === '/');
+
     // Page-level cleanup hooks (if any)
     const cleanupFns = [
       window.__paperCleanup,
       window.__readerCleanup,
       window.__trackerCleanup,
-      window.__topicQuickAddCleanup
+      window.__topicQuickAddCleanup,
+      window.__wordSelectorCleanup
     ];
     cleanupFns.forEach(fn => {
       if (typeof fn === 'function') {

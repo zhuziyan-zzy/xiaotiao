@@ -5,6 +5,7 @@ import csv
 from io import BytesIO, StringIO
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from typing import List, Optional, Dict, Any
 from db.database import get_db
 from schemas_vocab import VocabItemCreate, VocabItemUpdate, VocabItemResponse, VocabStatsResponse, VocabListResponse
@@ -61,7 +62,9 @@ def get_vocab_list(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     search: str = None,
-    domain: str = None
+    domain: str = None,
+    filter: str = None,
+    date: str = None
 ):
     offset = (page - 1) * limit
     
@@ -84,7 +87,33 @@ def get_vocab_list(
         base_query += " AND v.domain = :domain"
         count_query += " AND v.domain = :domain"
         params['domain'] = domain
-        
+
+    # Time-based and status filters
+    if filter == 'today':
+        target_date = date or datetime.now().strftime('%Y-%m-%d')
+        base_query += " AND date(v.created_at) = :target_date"
+        count_query += " AND date(v.created_at) = :target_date"
+        params['target_date'] = target_date
+    elif filter == 'month':
+        target_month = date or datetime.now().strftime('%Y-%m')
+        base_query += " AND strftime('%Y-%m', v.created_at) = :target_month"
+        count_query += " AND strftime('%Y-%m', v.created_at) = :target_month"
+        params['target_month'] = target_month
+    elif filter == 'year':
+        target_year = date or datetime.now().strftime('%Y')
+        base_query += " AND strftime('%Y', v.created_at) = :target_year"
+        count_query += " AND strftime('%Y', v.created_at) = :target_year"
+        params['target_year'] = target_year
+    elif filter == 'mastered':
+        base_query += " AND s.is_mastered = 1"
+        count_query = count_query.replace("FROM vocabulary_items v WHERE", "FROM vocabulary_items v LEFT JOIN vocabulary_srs_states s ON v.id = s.vocab_id WHERE") + " AND s.is_mastered = 1"
+    elif filter == 'unmastered':
+        base_query += " AND (s.is_mastered = 0 OR s.is_mastered IS NULL)"
+        count_query = count_query.replace("FROM vocabulary_items v WHERE", "FROM vocabulary_items v LEFT JOIN vocabulary_srs_states s ON v.id = s.vocab_id WHERE") + " AND (s.is_mastered = 0 OR s.is_mastered IS NULL)"
+    elif filter == 'easily_forgotten':
+        base_query += " AND v.is_easily_forgotten = 1"
+        count_query += " AND v.is_easily_forgotten = 1"
+
     base_query += " ORDER BY v.created_at DESC LIMIT :limit OFFSET :offset"
     params['limit'] = limit
     params['offset'] = offset
@@ -117,7 +146,9 @@ def get_vocab_list(
             "ease_factor": r['ease_factor'] or 2.5,
             "interval_days": r['interval_days'] or 1,
             "next_review_date": next_rev,
-            "is_mastered": bool(r['is_mastered'])
+            "is_mastered": bool(r['is_mastered']),
+            "duplicate_count": r['duplicate_count'] if 'duplicate_count' in r.keys() else 0,
+            "is_easily_forgotten": bool(r['is_easily_forgotten']) if 'is_easily_forgotten' in r.keys() else False,
         })
 
     import math
@@ -135,11 +166,43 @@ def get_vocab_list(
     description="创建一个新的生词条目并初始化记忆曲线状态。",
 )
 def create_vocab(item: VocabItemCreate, db = Depends(get_db)):
-    # Check if exists
-    existing = db.execute(text("SELECT id FROM vocabulary_items WHERE word = :word"), {"word": item.word.lower()}).fetchone()
+    # Check if exists — if duplicate, mark as 易忘
+    existing = db.execute(text("SELECT id, duplicate_count FROM vocabulary_items WHERE word = :word"), {"word": item.word.lower()}).fetchone()
     if existing:
-        raise HTTPException(status_code=400, detail="该单词已存在于生词本中。")
-        
+        new_count = (existing['duplicate_count'] or 0) + 1
+        db.execute(text("""
+            UPDATE vocabulary_items
+            SET duplicate_count = :count, is_easily_forgotten = 1
+            WHERE id = :id
+        """), {"count": new_count, "id": existing['id']})
+        # Increase mastery threshold and reset mastered status
+        db.execute(text("""
+            UPDATE vocabulary_srs_states
+            SET mastery_threshold = mastery_threshold + 2,
+                is_mastered = 0,
+                next_review_date = :now
+            WHERE vocab_id = :vid
+        """), {"vid": existing['id'], "now": datetime.now().isoformat()})
+        db.commit()
+        return {
+            "id": existing['id'],
+            "word": item.word.lower(),
+            "definition_zh": item.definition_zh,
+            "part_of_speech": item.part_of_speech,
+            "domain": item.domain,
+            "source": item.source,
+            "example_sentence": item.example_sentence,
+            "is_active": True,
+            "created_at": datetime.now(),
+            "traversal_count": 0,
+            "ease_factor": 2.5,
+            "interval_days": 1,
+            "next_review_date": datetime.now(),
+            "is_mastered": False,
+            "duplicate": True,
+            "duplicate_count": new_count,
+        }
+
     new_id = str(uuid.uuid4())
     now_str = datetime.now().isoformat()
     
@@ -160,12 +223,12 @@ def create_vocab(item: VocabItemCreate, db = Depends(get_db)):
     # 2. Insert SRS state
     srs_id = str(uuid.uuid4())
     db.execute(text("""
-        INSERT INTO vocabulary_srs_states (id, vocab_id, traversal_count, ease_factor, interval_days, next_review_date, is_mastered)
-        VALUES (:id, :vocab_id, 0, 2.5, 1, :next_review, 0)
+        INSERT INTO vocabulary_srs_states (id, vocab_id, traversal_count, ease_factor, interval_days, next_review_date, is_mastered, mastery_threshold)
+        VALUES (:id, :vocab_id, 0, 2.5, 1, :next_review, 0, 3)
     """), {
         "id": srs_id,
         "vocab_id": new_id,
-        "next_review": now_str # Due today
+        "next_review": now_str
     })
     
     db.commit()
@@ -423,10 +486,136 @@ def get_stats(db = Depends(get_db)):
             SUM(CASE WHEN is_mastered = 0 AND next_review_date <= :now THEN 1 ELSE 0 END) as due_today
         FROM vocabulary_srs_states
     """), {"now": datetime.now().isoformat()}).fetchone()
+
+    # Time-based counts
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    month_str = datetime.now().strftime('%Y-%m')
+    year_str = datetime.now().strftime('%Y')
+
+    today_count = db.execute(text(
+        "SELECT count(1) FROM vocabulary_items WHERE date(created_at) = :d"
+    ), {"d": today_str}).fetchone()[0] or 0
+    month_count = db.execute(text(
+        "SELECT count(1) FROM vocabulary_items WHERE strftime('%Y-%m', created_at) = :m"
+    ), {"m": month_str}).fetchone()[0] or 0
+    year_count = db.execute(text(
+        "SELECT count(1) FROM vocabulary_items WHERE strftime('%Y', created_at) = :y"
+    ), {"y": year_str}).fetchone()[0] or 0
+    easily_forgotten = db.execute(text(
+        "SELECT count(1) FROM vocabulary_items WHERE is_easily_forgotten = 1"
+    )).fetchone()[0] or 0
     
     return {
         "total": total or 0,
         "active": active or 0,
         "mastered": srs_stats[0] if srs_stats and srs_stats[0] else 0,
-        "need_review_today": srs_stats[1] if srs_stats and srs_stats[1] else 0
+        "need_review_today": srs_stats[1] if srs_stats and srs_stats[1] else 0,
+        "today_count": int(today_count),
+        "month_count": int(month_count),
+        "year_count": int(year_count),
+        "easily_forgotten": int(easily_forgotten),
     }
+
+
+@router.get(
+    "/export",
+    summary="导出词汇表",
+    description="导出当前筛选条件下的词汇为 Word 文档。",
+)
+def export_vocab(
+    db=Depends(get_db),
+    filter: str = None,
+    date: str = None,
+    search: str = None,
+    domain: str = None,
+):
+    import docx
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+
+    # Build query (reuse filter logic)
+    base_query = """
+        SELECT v.*, s.is_mastered, v.is_easily_forgotten
+        FROM vocabulary_items v
+        LEFT JOIN vocabulary_srs_states s ON v.id = s.vocab_id
+        WHERE 1=1
+    """
+    params = {}
+    if search:
+        base_query += " AND v.word LIKE :search"
+        params['search'] = f"%{search}%"
+    if domain:
+        base_query += " AND v.domain = :domain"
+        params['domain'] = domain
+
+    title_suffix = "全部生词"
+    if filter == 'today':
+        target_date = date or datetime.now().strftime('%Y-%m-%d')
+        base_query += " AND date(v.created_at) = :target_date"
+        params['target_date'] = target_date
+        title_suffix = f"当日生词本 ({target_date})"
+    elif filter == 'month':
+        target_month = date or datetime.now().strftime('%Y-%m')
+        base_query += " AND strftime('%Y-%m', v.created_at) = :target_month"
+        params['target_month'] = target_month
+        title_suffix = f"当月生词本 ({target_month})"
+    elif filter == 'year':
+        target_year = date or datetime.now().strftime('%Y')
+        base_query += " AND strftime('%Y', v.created_at) = :target_year"
+        params['target_year'] = target_year
+        title_suffix = f"当年生词本 ({target_year})"
+    elif filter == 'mastered':
+        base_query += " AND s.is_mastered = 1"
+        title_suffix = "已掌握词汇"
+    elif filter == 'unmastered':
+        base_query += " AND (s.is_mastered = 0 OR s.is_mastered IS NULL)"
+        title_suffix = "未掌握词汇"
+    elif filter == 'easily_forgotten':
+        base_query += " AND v.is_easily_forgotten = 1"
+        title_suffix = "易忘生词"
+
+    base_query += " ORDER BY v.created_at DESC"
+    rows = db.execute(text(base_query), params).fetchall()
+
+    # Create Word document
+    doc = docx.Document()
+    doc.add_heading(f"生词本 — {title_suffix}", level=1)
+    doc.add_paragraph(f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}　共 {len(rows)} 个词汇")
+
+    if rows:
+        table = doc.add_table(rows=1, cols=5)
+        table.style = 'Table Grid'
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        headers = ['单词', '中文释义', '词性', '专业领域', '状态']
+        for i, h in enumerate(headers):
+            cell = table.rows[0].cells[i]
+            cell.text = h
+            for p in cell.paragraphs:
+                for run in p.runs:
+                    run.bold = True
+                    run.font.size = Pt(10)
+
+        for r in rows:
+            status = '已掌握' if r['is_mastered'] else ('易忘' if r['is_easily_forgotten'] else '学习中')
+            row_cells = table.add_row().cells
+            row_cells[0].text = r['word'] or ''
+            row_cells[1].text = r['definition_zh'] or ''
+            row_cells[2].text = r['part_of_speech'] or ''
+            row_cells[3].text = r['domain'] or ''
+            row_cells[4].text = status
+
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    # Use RFC 5987 encoding for non-ASCII filenames
+    from urllib.parse import quote
+    safe_name = title_suffix.replace(' ', '_')
+    encoded_name = quote(f"vocab_{safe_name}.docx")
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename=vocab_export.docx; filename*=UTF-8''{encoded_name}"}
+    )

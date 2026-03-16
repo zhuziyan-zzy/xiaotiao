@@ -1,5 +1,6 @@
 // Paper Detail Page — /papers/:id
 import { streamAI, renderMarkdown, startSimulatedProgress } from '../utils/stream.js';
+import { authFetch } from '../utils/http.js';
 
 const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
@@ -78,7 +79,7 @@ export async function initPaperDetailPage(params) {
 
   // Load paper data
   try {
-    const res = await fetch(`${API_BASE}/papers/${paperId}`);
+    const res = await authFetch(`${API_BASE}/papers/${paperId}`);
     if (!res.ok) throw new Error('Paper not found');
     const paper = await res.json();
     renderHeader(paper);
@@ -415,7 +416,7 @@ async function addToVocab(word) {
   const cleaned = (word || '').trim();
   if (!cleaned) return;
   try {
-    await fetch(`${API_BASE}/vocab`, {
+    await authFetch(`${API_BASE}/vocab`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ word: cleaned, source: 'paper', domain: 'general' })
@@ -428,7 +429,7 @@ async function addToVocab(word) {
 
 async function loadAnnotations(paperId) {
   try {
-    const res = await fetch(`${API_BASE}/papers/${paperId}/annotations`);
+    const res = await authFetch(`${API_BASE}/papers/${paperId}/annotations`);
     const anns = await res.json();
     const container = document.getElementById('annotations-list');
 
@@ -460,7 +461,7 @@ function escapeHtml(str) {
 
 window.__deleteAnnotation = async (annId, paperId) => {
   try {
-    await fetch(`${API_BASE}/papers/annotations/${annId}`, { method: 'DELETE' });
+    await authFetch(`${API_BASE}/papers/annotations/${annId}`, { method: 'DELETE' });
     loadAnnotations(paperId);
   } catch (e) {
     window.showToast('删除失败', 'error');

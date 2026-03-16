@@ -35,11 +35,27 @@ def _llm_provider() -> str:
 
 
 def _clean_json_text(content: str) -> str:
+    """Robustly clean LLM text output into parseable JSON."""
+    import re
     text = content.strip()
-    if text.startswith("```json"):
-        text = text[text.find("{") :]
+    # Strip markdown fences
+    if text.startswith("```"):
+        first_brace = text.find("{")
+        if first_brace != -1:
+            text = text[first_brace:]
     if text.endswith("```"):
-        text = text[: text.rfind("}") + 1]
+        last_brace = text.rfind("}")
+        if last_brace != -1:
+            text = text[: last_brace + 1]
+    # Extract JSON object if surrounded by other text
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    if first_brace != -1 and last_brace != -1 and first_brace < last_brace:
+        text = text[first_brace : last_brace + 1]
+    # Remove trailing commas before } or ]
+    text = re.sub(r',\s*([}\]])', r'\1', text)
+    # Remove single-line JS-style comments
+    text = re.sub(r'//[^\n]*', '', text)
     return text
 
 
@@ -203,6 +219,7 @@ async def _call_gemini_json(system_prompt: str, user_prompt: str, max_tokens: in
         "generationConfig": {
             "maxOutputTokens": max_tokens,
             "temperature": 0.7,
+            "responseMimeType": "application/json",
         },
     }
     headers = {

@@ -8,10 +8,12 @@ from typing import Any, Dict, List, Optional
 from db.database import DB_PATH
 
 
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+def _connect(db: Optional[sqlite3.Connection] = None, db_path: Optional[str] = None):
+    if db is not None:
+        return db, False
+    conn = sqlite3.connect(db_path or DB_PATH)
     conn.row_factory = sqlite3.Row
-    return conn
+    return conn, True
 
 
 def now_iso() -> str:
@@ -25,8 +27,11 @@ def upsert_github_case(
     stars: int,
     description: Optional[str] = None,
     language: Optional[str] = None,
+    db: Optional[sqlite3.Connection] = None,
+    db_path: Optional[str] = None,
 ) -> None:
-    with _connect() as conn:
+    conn, should_close = _connect(db, db_path)
+    try:
         conn.execute(
             """
             INSERT INTO github_cases (query, full_name, html_url, stars, description, language, fetched_at)
@@ -41,10 +46,14 @@ def upsert_github_case(
             (query, full_name, html_url, stars, description, language, now_iso()),
         )
         conn.commit()
+    finally:
+        if should_close:
+            conn.close()
 
 
-def list_github_cases(limit: int = 20) -> List[Dict[str, Any]]:
-    with _connect() as conn:
+def list_github_cases(limit: int = 20, db: Optional[sqlite3.Connection] = None, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    conn, should_close = _connect(db, db_path)
+    try:
         rows = conn.execute(
             """
             SELECT query, full_name, html_url, stars, description, language, fetched_at
@@ -54,11 +63,15 @@ def list_github_cases(limit: int = 20) -> List[Dict[str, Any]]:
             """,
             (max(1, min(limit, 100)),),
         ).fetchall()
+    finally:
+        if should_close:
+            conn.close()
     return [dict(row) for row in rows]
 
 
-def list_org_units() -> List[Dict[str, Any]]:
-    with _connect() as conn:
+def list_org_units(db: Optional[sqlite3.Connection] = None, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    conn, should_close = _connect(db, db_path)
+    try:
         rows = conn.execute(
             """
             SELECT unit_key, unit_name, responsibility, owner_role, created_at
@@ -66,6 +79,9 @@ def list_org_units() -> List[Dict[str, Any]]:
             ORDER BY id ASC
             """
         ).fetchall()
+    finally:
+        if should_close:
+            conn.close()
     return [dict(row) for row in rows]
 
 
@@ -75,10 +91,13 @@ def upsert_rag_document(
     title: str,
     source_url: Optional[str],
     metadata: Optional[Dict[str, Any]] = None,
+    db: Optional[sqlite3.Connection] = None,
+    db_path: Optional[str] = None,
 ) -> int:
     metadata_json = json.dumps(metadata or {}, ensure_ascii=False)
     now = now_iso()
-    with _connect() as conn:
+    conn, should_close = _connect(db, db_path)
+    try:
         conn.execute(
             """
             INSERT INTO rag_documents (source_id, source_type, title, source_url, metadata_json, created_at, updated_at)
@@ -94,14 +113,18 @@ def upsert_rag_document(
         )
         row = conn.execute("SELECT id FROM rag_documents WHERE source_id = ?", (source_id,)).fetchone()
         conn.commit()
+    finally:
+        if should_close:
+            conn.close()
     if not row:
         raise RuntimeError("Failed to upsert rag document")
     return int(row["id"])
 
 
-def replace_rag_chunks(document_id: int, chunks: List[str]) -> int:
+def replace_rag_chunks(document_id: int, chunks: List[str], db: Optional[sqlite3.Connection] = None, db_path: Optional[str] = None) -> int:
     now = now_iso()
-    with _connect() as conn:
+    conn, should_close = _connect(db, db_path)
+    try:
         old_rows = conn.execute(
             "SELECT id FROM rag_chunks WHERE document_id = ?",
             (document_id,),
@@ -136,6 +159,9 @@ def replace_rag_chunks(document_id: int, chunks: List[str]) -> int:
             inserted += 1
         conn.execute("UPDATE rag_documents SET updated_at = ? WHERE id = ?", (now, document_id))
         conn.commit()
+    finally:
+        if should_close:
+            conn.close()
     return inserted
 
 
@@ -145,12 +171,13 @@ def _fts_query(query: str) -> str:
     return " OR ".join(terms[:12])
 
 
-def search_rag_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+def search_rag_chunks(query: str, top_k: int = 5, db: Optional[sqlite3.Connection] = None, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     fts_q = _fts_query(query)
     if not fts_q:
         return []
     limit = max(1, min(top_k, 10))
-    with _connect() as conn:
+    conn, should_close = _connect(db, db_path)
+    try:
         try:
             rows = conn.execute(
                 """
@@ -190,11 +217,18 @@ def search_rag_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
                 """,
                 (query, limit),
             ).fetchall()
+    finally:
+        if should_close:
+            conn.close()
     return [dict(row) for row in rows]
 
 
-def rag_stats() -> Dict[str, int]:
-    with _connect() as conn:
+def rag_stats(db: Optional[sqlite3.Connection] = None, db_path: Optional[str] = None) -> Dict[str, int]:
+    conn, should_close = _connect(db, db_path)
+    try:
         docs = conn.execute("SELECT COUNT(*) AS cnt FROM rag_documents").fetchone()
         chunks = conn.execute("SELECT COUNT(*) AS cnt FROM rag_chunks").fetchone()
+    finally:
+        if should_close:
+            conn.close()
     return {"documents": int(docs["cnt"] if docs else 0), "chunks": int(chunks["cnt"] if chunks else 0)}

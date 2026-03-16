@@ -1,3 +1,5 @@
+import { authFetch } from '../utils/http.js';
+
 // Tracker Page — /tracker
 const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
@@ -125,7 +127,7 @@ window.__trackerCleanup = () => {
 async function loadTopics() {
   const container = document.getElementById('topics-list');
   try {
-    const res = await fetch(`${API_BASE}/topics`);
+    const res = await authFetch(`${API_BASE}/topics`);
     const topics = await res.json();
 
     if (topics.length === 0) {
@@ -173,7 +175,7 @@ async function loadDiscoveredPapers() {
     let url = `${API_BASE}/topics/papers`;
     if (currentFilter) url += `?status=${currentFilter}`;
 
-    const res = await fetch(url);
+    const res = await authFetch(url);
     const papers = await res.json();
 
     document.getElementById('discovered-count').textContent = `(${papers.length})`;
@@ -261,7 +263,7 @@ async function addTopic() {
   btn.disabled = true;
 
   try {
-    await fetch(`${API_BASE}/topics`, {
+    await authFetch(`${API_BASE}/topics`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, check_frequency: frequency, sources })
@@ -303,7 +305,7 @@ window.__deleteTopic = async (id) => {
   const ok = await window.showGlassConfirm('删除追踪主题', '确定要删除这个追踪主题吗？相关的发现论文也将被删除。', { danger: true, confirmText: '删除' });
   if (ok) {
     try {
-      await fetch(`${API_BASE}/topics/${id}`, { method: 'DELETE' });
+      await authFetch(`${API_BASE}/topics/${id}`, { method: 'DELETE' });
       window.showToast('追踪主题已删除', 'success');
       loadTopics();
       loadDiscoveredPapers();
@@ -315,7 +317,7 @@ window.__deleteTopic = async (id) => {
 
 window.__checkNow = async (id) => {
   try {
-    await fetch(`${API_BASE}/topics/${id}/check-now`, { method: 'POST' });
+    await authFetch(`${API_BASE}/topics/${id}/check-now`, { method: 'POST' });
     window.showToast('正在搜索最新论文...', 'info');
     // Refresh after a short delay to show results
     setTimeout(() => {
@@ -329,7 +331,7 @@ window.__checkNow = async (id) => {
 
 window.__importPaper = async (id) => {
   try {
-    const res = await fetch(`${API_BASE}/topics/papers/${id}/import`, { method: 'POST' });
+    const res = await authFetch(`${API_BASE}/topics/papers/${id}/import`, { method: 'POST' });
     const data = await res.json();
     window.showToast(data.duplicate ? '该论文已存在于论文库' : '已收录到论文库', 'success');
     loadDiscoveredPapers();
@@ -340,7 +342,7 @@ window.__importPaper = async (id) => {
 
 window.__ignorePaper = async (id) => {
   try {
-    await fetch(`${API_BASE}/topics/papers/${id}`, { method: 'DELETE' });
+    await authFetch(`${API_BASE}/topics/papers/${id}`, { method: 'DELETE' });
     loadDiscoveredPapers();
   } catch (e) {
     window.showToast('操作失败', 'error');

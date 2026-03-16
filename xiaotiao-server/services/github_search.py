@@ -62,7 +62,11 @@ def fetch_repositories(query: str, per_page: int = 20) -> List[Dict[str, Any]]:
     return []
 
 
-def refresh_github_cases(queries: Optional[List[str]] = None, per_page: int = 20) -> Dict[str, Any]:
+def refresh_github_cases(
+    queries: Optional[List[str]] = None,
+    per_page: int = 20,
+    db=None,
+) -> Dict[str, Any]:
     selected_queries = queries or DEFAULT_QUERIES
     total_saved = 0
     cycle_details = []
@@ -84,6 +88,7 @@ def refresh_github_cases(queries: Optional[List[str]] = None, per_page: int = 20
                 stars=int(item.get("stargazers_count", 0)),
                 description=item.get("description"),
                 language=item.get("language"),
+                db=db,
             )
             saved += 1
         total_saved += saved

@@ -2,18 +2,22 @@
 
 import os
 import uuid
-import json
-import asyncio
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
 
 from db.database import get_db
 from services.llm import call_claude_json, call_claude_stream
-from services.paper_service import process_paper_url, process_paper_pdf, get_paper_text, UPLOAD_DIR
+from services.paper_service import (
+    process_paper_url,
+    process_paper_pdf,
+    process_paper_docx,
+    get_paper_text,
+    UPLOAD_DIR,
+)
 
 router = APIRouter(prefix="/papers", tags=["论文库"])
 
@@ -43,6 +47,20 @@ class AnnotationCreate(BaseModel):
 class InsightRequest(BaseModel):
     text: Optional[str] = None
 
+class FolderCreate(BaseModel):
+    name: str
+    parent_id: Optional[str] = None
+
+class FolderRename(BaseModel):
+    name: str
+
+class MovePaper(BaseModel):
+    folder_id: Optional[str] = None
+
+class ReadingProgressUpdate(BaseModel):
+    pages_read: int
+    total_pages: int
+
 
 # ── Paper CRUD ────────────────────────────────
 
@@ -55,12 +73,20 @@ def list_papers(
     page: int = 1,
     limit: int = 20,
     collection_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
     favorites_only: bool = False,
+    root_only: bool = False,
     db=Depends(get_db)
 ):
     offset = (page - 1) * limit
 
-    if collection_id:
+    if folder_id:
+        rows = db.execute(
+            "SELECT * FROM papers WHERE folder_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (folder_id, limit, offset)
+        ).fetchall()
+        total = db.execute("SELECT COUNT(*) FROM papers WHERE folder_id=?", (folder_id,)).fetchone()[0]
+    elif collection_id:
         rows = db.execute(
             """SELECT p.* FROM papers p
                JOIN collection_papers cp ON cp.paper_id = p.id
@@ -78,6 +104,12 @@ def list_papers(
             (limit, offset)
         ).fetchall()
         total = db.execute("SELECT COUNT(*) FROM papers WHERE is_favorite=1").fetchone()[0]
+    elif root_only:
+        rows = db.execute(
+            "SELECT * FROM papers WHERE folder_id IS NULL ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset)
+        ).fetchall()
+        total = db.execute("SELECT COUNT(*) FROM papers WHERE folder_id IS NULL").fetchone()[0]
     else:
         rows = db.execute(
             "SELECT * FROM papers ORDER BY created_at DESC LIMIT ? OFFSET ?",
@@ -98,8 +130,9 @@ def list_papers(
     summary="批量导入论文链接",
     description="批量提交 ArXiv/URL 并异步抓取元数据。",
 )
-async def batch_import_urls(body: BatchUrlRequest, background_tasks: BackgroundTasks, db=Depends(get_db)):
+async def batch_import_urls(body: BatchUrlRequest, background_tasks: BackgroundTasks, request: Request, db=Depends(get_db)):
     created = []
+    db_path = request.state.db_path if hasattr(request, "state") else None
     for url in body.urls:
         url = url.strip()
         if not url:
@@ -118,7 +151,7 @@ async def batch_import_urls(body: BatchUrlRequest, background_tasks: BackgroundT
             (paper_id, url[:100], url, now, now)
         )
         db.commit()
-        background_tasks.add_task(asyncio.to_thread, lambda pid=paper_id, u=url: asyncio.run(process_paper_url(pid, u)))
+        background_tasks.add_task(process_paper_url, paper_id, url, db_path)
         created.append({"id": paper_id, "url": url, "duplicate": False})
 
     return {"papers": created}
@@ -126,19 +159,24 @@ async def batch_import_urls(body: BatchUrlRequest, background_tasks: BackgroundT
 
 @router.post(
     "/upload-pdf",
-    summary="上传 PDF",
-    description="上传单个 PDF 并创建论文记录。",
+    summary="上传论文文件",
+    description="上传单个 PDF 或 Word 文档并创建论文记录。",
 )
 async def upload_pdf(
     background_tasks: BackgroundTasks,
+    request: Request,
     file: UploadFile = File(...),
     db=Depends(get_db)
 ):
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(400, "仅支持 PDF 文件。")
+    filename_lower = (file.filename or "").lower()
+    is_pdf = filename_lower.endswith(".pdf")
+    is_docx = filename_lower.endswith(".docx")
+    if not (is_pdf or is_docx):
+        raise HTTPException(400, "仅支持 PDF 或 Word（.docx）文件。")
 
     paper_id = str(uuid.uuid4())
-    filename = f"{paper_id}.pdf"
+    ext = ".pdf" if is_pdf else ".docx"
+    filename = f"{paper_id}{ext}"
     filepath = os.path.join(UPLOAD_DIR, filename)
 
     content = await file.read()
@@ -149,21 +187,32 @@ async def upload_pdf(
         f.write(content)
 
     now = datetime.utcnow().isoformat()
-    db.execute(
-        """INSERT INTO papers (id, title, source, status, pdf_path, created_at, updated_at)
-           VALUES (?, ?, 'upload', 'pending', ?, ?, ?)""",
-        (paper_id, file.filename or "Uploaded PDF", filepath, now, now)
-    )
+    if is_pdf:
+        db.execute(
+            """INSERT INTO papers (id, title, source, status, pdf_path, created_at, updated_at)
+               VALUES (?, ?, 'upload', 'pending', ?, ?, ?)""",
+            (paper_id, file.filename or "Uploaded PDF", filepath, now, now)
+        )
+    else:
+        db.execute(
+            """INSERT INTO papers (id, title, source, status, docx_path, created_at, updated_at)
+               VALUES (?, ?, 'upload', 'pending', ?, ?, ?)""",
+            (paper_id, file.filename or "Uploaded Word", filepath, now, now)
+        )
     db.commit()
 
-    background_tasks.add_task(process_paper_pdf, paper_id, filepath)
-    return {"id": paper_id, "filename": file.filename}
+    db_path = request.state.db_path if hasattr(request, "state") else None
+    if is_pdf:
+        background_tasks.add_task(process_paper_pdf, paper_id, filepath, db_path)
+    else:
+        background_tasks.add_task(process_paper_docx, paper_id, filepath, db_path)
+    return {"id": paper_id, "filename": file.filename, "type": "pdf" if is_pdf else "docx"}
 
 
 @router.get(
     "/stats",
     summary="论文统计",
-    description="获取近 7 天导入与阅读次数。",
+    description="获取阅读统计数据。",
 )
 def get_paper_stats(db=Depends(get_db)):
     row = db.execute(
@@ -172,10 +221,158 @@ def get_paper_stats(db=Depends(get_db)):
             COALESCE(SUM(CASE WHEN updated_at >= datetime('now','-7 days') THEN 1 ELSE 0 END), 0) AS viewed_7d
            FROM papers"""
     ).fetchone()
+
+    # Reading stats
+    total_papers = db.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
+    read_papers = db.execute("SELECT COUNT(*) FROM papers WHERE read_status='read'").fetchone()[0]
+    reading_papers = db.execute("SELECT COUNT(*) FROM papers WHERE read_status='reading'").fetchone()[0]
+
+    # Today's reading
+    today_row = db.execute(
+        "SELECT COALESCE(SUM(pages_read),0) as pages FROM reading_log WHERE read_date=date('now')"
+    ).fetchone()
+    today_pages = int(today_row["pages"]) if today_row else 0
+
+    # Daily history (last 90 days)
+    daily_rows = db.execute(
+        """SELECT read_date, SUM(pages_read) as pages
+           FROM reading_log
+           WHERE read_date >= date('now', '-90 days')
+           GROUP BY read_date
+           ORDER BY read_date"""
+    ).fetchall()
+
     return {
         "imported_7d": int(row["imported_7d"]) if row else 0,
         "viewed_7d": int(row["viewed_7d"]) if row else 0,
+        "total_papers": total_papers,
+        "read_papers": read_papers,
+        "reading_papers": reading_papers,
+        "today_pages": today_pages,
+        "completion_rate": round(read_papers / total_papers * 100, 1) if total_papers > 0 else 0,
+        "daily_history": [{"date": r["read_date"], "pages": int(r["pages"])} for r in daily_rows],
     }
+
+
+# ── Folder Management ──────────────────────────
+
+@router.get(
+    "/folders",
+    summary="获取文件夹树",
+    description="返回所有文件夹，客户端自行构建树结构。",
+)
+def list_folders(db=Depends(get_db)):
+    rows = db.execute(
+        "SELECT * FROM paper_folders ORDER BY created_at"
+    ).fetchall()
+    folders = [dict(r) for r in rows]
+    # Add paper count per folder
+    for f in folders:
+        cnt = db.execute("SELECT COUNT(*) FROM papers WHERE folder_id=?", (f["id"],)).fetchone()[0]
+        f["paper_count"] = cnt
+    return folders
+
+
+@router.post(
+    "/folders",
+    summary="创建文件夹",
+    description="创建新文件夹，可指定父级。",
+)
+def create_folder(body: FolderCreate, db=Depends(get_db)):
+    folder_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+    db.execute(
+        "INSERT INTO paper_folders (id, name, parent_id, created_at) VALUES (?, ?, ?, ?)",
+        (folder_id, body.name, body.parent_id, now)
+    )
+    db.commit()
+    return {"id": folder_id, "name": body.name, "parent_id": body.parent_id}
+
+
+@router.put(
+    "/folders/{folder_id}",
+    summary="重命名文件夹",
+)
+def rename_folder(folder_id: str, body: FolderRename, db=Depends(get_db)):
+    db.execute("UPDATE paper_folders SET name=? WHERE id=?", (body.name, folder_id))
+    db.commit()
+    return {"id": folder_id, "name": body.name}
+
+
+@router.delete(
+    "/folders/{folder_id}",
+    summary="删除文件夹",
+    description="删除文件夹，其中论文移至根级别。",
+)
+def delete_folder(folder_id: str, db=Depends(get_db)):
+    # Move papers to root
+    db.execute("UPDATE papers SET folder_id=NULL WHERE folder_id=?", (folder_id,))
+    # Move sub-folders to parent
+    row = db.execute("SELECT parent_id FROM paper_folders WHERE id=?", (folder_id,)).fetchone()
+    parent_id = row["parent_id"] if row else None
+    db.execute("UPDATE paper_folders SET parent_id=? WHERE parent_id=?", (parent_id, folder_id))
+    db.execute("DELETE FROM paper_folders WHERE id=?", (folder_id,))
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.put(
+    "/{paper_id}/folder",
+    summary="移动论文到文件夹",
+)
+def move_paper_to_folder(paper_id: str, body: MovePaper, db=Depends(get_db)):
+    db.execute(
+        "UPDATE papers SET folder_id=?, updated_at=? WHERE id=?",
+        (body.folder_id, datetime.utcnow().isoformat(), paper_id)
+    )
+    db.commit()
+    return {"paper_id": paper_id, "folder_id": body.folder_id}
+
+
+@router.put(
+    "/{paper_id}/reading-progress",
+    summary="更新阅读进度",
+)
+def update_reading_progress(paper_id: str, body: ReadingProgressUpdate, db=Depends(get_db)):
+    row = db.execute("SELECT pages_read, total_pages FROM papers WHERE id=?", (paper_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "未找到该论文。")
+
+    # Determine read_status
+    if body.pages_read >= body.total_pages and body.total_pages > 0:
+        status = "read"
+    elif body.pages_read > 0:
+        status = "reading"
+    else:
+        status = "unread"
+
+    now = datetime.utcnow().isoformat()
+    db.execute(
+        "UPDATE papers SET pages_read=?, total_pages=?, read_status=?, updated_at=? WHERE id=?",
+        (body.pages_read, body.total_pages, status, now, paper_id)
+    )
+
+    # Log reading activity (upsert for today)
+    old_pages = int(row["pages_read"]) if row["pages_read"] else 0
+    new_pages = body.pages_read - old_pages
+    if new_pages > 0:
+        existing = db.execute(
+            "SELECT id, pages_read FROM reading_log WHERE paper_id=? AND read_date=date('now')",
+            (paper_id,)
+        ).fetchone()
+        if existing:
+            db.execute(
+                "UPDATE reading_log SET pages_read=pages_read+? WHERE id=?",
+                (new_pages, existing["id"])
+            )
+        else:
+            db.execute(
+                "INSERT INTO reading_log (paper_id, pages_read) VALUES (?, ?)",
+                (paper_id, new_pages)
+            )
+
+    db.commit()
+    return {"pages_read": body.pages_read, "total_pages": body.total_pages, "read_status": status}
 
 
 @router.get(
@@ -211,13 +408,15 @@ def get_paper(paper_id: str, db=Depends(get_db)):
     description="删除论文记录并清理本地 PDF 文件（如存在）。",
 )
 def delete_paper(paper_id: str, db=Depends(get_db)):
-    row = db.execute("SELECT pdf_path FROM papers WHERE id=?", (paper_id,)).fetchone()
+    row = db.execute("SELECT pdf_path, docx_path FROM papers WHERE id=?", (paper_id,)).fetchone()
     if not row:
         raise HTTPException(404, "未找到该论文。")
 
     # Delete PDF file if exists
     if row["pdf_path"] and os.path.exists(row["pdf_path"]):
         os.remove(row["pdf_path"])
+    if row["docx_path"] and os.path.exists(row["docx_path"]):
+        os.remove(row["docx_path"])
 
     db.execute("DELETE FROM papers WHERE id=?", (paper_id,))
     db.commit()
@@ -248,7 +447,7 @@ def toggle_favorite(paper_id: str, db=Depends(get_db)):
     summary="生成论文解读",
     description="流式生成论文的结构化解读（Insight）。支持传入临时文本进行测试。",
 )
-async def insight_paper(paper_id: str, body: Optional[InsightRequest] = None, db=Depends(get_db)):
+async def insight_paper(paper_id: str, request: Request, body: Optional[InsightRequest] = None, db=Depends(get_db)):
     row = db.execute("SELECT * FROM papers WHERE id=?", (paper_id,)).fetchone()
     if not row:
         raise HTTPException(404, "未找到该论文。")
@@ -256,7 +455,8 @@ async def insight_paper(paper_id: str, body: Optional[InsightRequest] = None, db
     manual_text = ""
     if body and body.text:
         manual_text = body.text.strip()
-    paper_text = manual_text or get_paper_text(paper_id)
+    db_path = request.state.db_path if request and hasattr(request, "state") else None
+    paper_text = manual_text or get_paper_text(paper_id, db_path)
     if not paper_text:
         raise HTTPException(400, "该论文暂无可用文本内容，请上传可复制文本的 PDF，或在前端粘贴测试文本。")
 
@@ -298,7 +498,7 @@ async def insight_paper(paper_id: str, body: Optional[InsightRequest] = None, db
 
         # Save insight after streaming completes
         try:
-            conn = __import__('sqlite3').connect(os.getenv("DB_PATH", "./db/xiaotiao.db"))
+            conn = __import__('sqlite3').connect(db_path or os.getenv("DB_PATH", "./db/xiaotiao.db"))
             conn.execute("UPDATE papers SET insight=?, updated_at=? WHERE id=?",
                          (full_text, datetime.utcnow().isoformat(), paper_id))
             conn.commit()
@@ -315,8 +515,8 @@ async def insight_paper(paper_id: str, body: Optional[InsightRequest] = None, db
     summary="生成论文解读（兼容旧接口）",
     description="与 /insight 等价，保留旧接口兼容。",
 )
-async def explain_paper(paper_id: str, db=Depends(get_db)):
-    return await insight_paper(paper_id, db)
+async def explain_paper(paper_id: str, request: Request, db=Depends(get_db)):
+    return await insight_paper(paper_id, request=request, db=db)
 
 
 @router.post(
@@ -324,12 +524,13 @@ async def explain_paper(paper_id: str, db=Depends(get_db)):
     summary="论文对话",
     description="基于论文内容进行对话问答（流式输出）。",
 )
-async def chat_with_paper(paper_id: str, body: ChatRequest, db=Depends(get_db)):
+async def chat_with_paper(paper_id: str, body: ChatRequest, request: Request, db=Depends(get_db)):
     row = db.execute("SELECT * FROM papers WHERE id=?", (paper_id,)).fetchone()
     if not row:
         raise HTTPException(404, "未找到该论文。")
 
-    paper_text = get_paper_text(paper_id)
+    db_path = request.state.db_path if hasattr(request, "state") else None
+    paper_text = get_paper_text(paper_id, db_path)
 
     # Get chat history
     history = db.execute(
@@ -370,7 +571,7 @@ async def chat_with_paper(paper_id: str, body: ChatRequest, db=Depends(get_db)):
 
         # Save assistant response
         try:
-            conn = __import__('sqlite3').connect(os.getenv("DB_PATH", "./db/xiaotiao.db"))
+            conn = __import__('sqlite3').connect(db_path or os.getenv("DB_PATH", "./db/xiaotiao.db"))
             conn.execute("INSERT INTO paper_chats (paper_id, role, content) VALUES (?, 'assistant', ?)",
                          (paper_id, full_response))
             conn.commit()

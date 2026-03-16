@@ -88,13 +88,13 @@ async def _generate_brief(title: str, abstract: str) -> str:
     return clipped + ("..." if len(abstract) > 200 else "")
 
 
-async def search_arxiv_for_topic(topic_id: str, title: str, max_results: int = 5):
-    """Search ArXiv for papers related to a topic and save results."""
+async def search_arxiv_for_topic(topic_id: str, title: str, max_results: int = 5, db_path: str = None):
+    """Search ArXiv for papers related to a topic and auto-import into library folders."""
     import httpx
     import sqlite3
 
-    db_path = os.getenv("DB_PATH", "./db/xiaotiao.db")
-    conn = sqlite3.connect(db_path)
+    target_db = db_path or os.getenv("DB_PATH", "./db/xiaotiao.db")
+    conn = sqlite3.connect(target_db)
     conn.row_factory = sqlite3.Row
 
     try:
@@ -113,6 +113,38 @@ async def search_arxiv_for_topic(topic_id: str, title: str, max_results: int = 5
         ns = {"atom": "http://www.w3.org/2005/Atom"}
         root = ET.fromstring(resp.text)
 
+        # --- Auto-filing: create folder hierarchy ---
+        # Parent folder: topic name (reuse if exists)
+        parent_folder = conn.execute(
+            "SELECT id FROM paper_folders WHERE topic_id=? AND parent_id IS NULL",
+            (topic_id,)
+        ).fetchone()
+        if parent_folder:
+            parent_folder_id = parent_folder["id"]
+        else:
+            parent_folder_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO paper_folders (id, name, parent_id, source, topic_id, created_at) VALUES (?,?,NULL,'tracker',?,?)",
+                (parent_folder_id, title, topic_id, datetime.utcnow().isoformat())
+            )
+
+        # Sub-folder: date + nth query today
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        existing_today = conn.execute(
+            "SELECT COUNT(*) FROM paper_folders WHERE parent_id=? AND name LIKE ?",
+            (parent_folder_id, f"{today_str}%")
+        ).fetchone()[0]
+        nth = existing_today + 1
+        sub_folder_name = f"{today_str} 第{nth}次查询"
+        sub_folder_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO paper_folders (id, name, parent_id, source, topic_id, created_at) VALUES (?,?,?,'tracker',?,?)",
+            (sub_folder_id, sub_folder_name, parent_folder_id, topic_id, datetime.utcnow().isoformat())
+        )
+
+        now = datetime.utcnow().isoformat()
+        imported_count = 0
+
         for entry in root.findall("atom:entry", ns):
             entry_title = entry.findtext("atom:title", "", ns).strip().replace("\n", " ")
             summary = entry.findtext("atom:summary", "", ns).strip()
@@ -125,6 +157,7 @@ async def search_arxiv_for_topic(topic_id: str, title: str, max_results: int = 5
             if not entry_url:
                 entry_url = entry.findtext("atom:id", "", ns)
 
+            # Skip if already in topic_papers
             existing = conn.execute(
                 "SELECT id FROM topic_papers WHERE topic_id=? AND url=?",
                 (topic_id, entry_url),
@@ -134,19 +167,34 @@ async def search_arxiv_for_topic(topic_id: str, title: str, max_results: int = 5
 
             brief = await _generate_brief(entry_title, summary)
             tp_id = str(uuid.uuid4())
+
+            # Save to topic_papers (for tracking)
             conn.execute(
                 """INSERT INTO topic_papers (id, topic_id, title, url, brief, status, discovered_at)
-                   VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
-                (tp_id, topic_id, entry_title, entry_url, brief, datetime.utcnow().isoformat()),
+                   VALUES (?, ?, ?, ?, ?, 'done', ?)""",
+                (tp_id, topic_id, entry_title, entry_url, brief, now),
             )
+
+            # Auto-import into papers table with folder
+            paper_exists = conn.execute("SELECT id FROM papers WHERE url=?", (entry_url,)).fetchone()
+            if not paper_exists:
+                paper_id = str(uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO papers (id, title, url, source, status, folder_id, read_status, created_at, updated_at)
+                       VALUES (?, ?, ?, 'arxiv', 'pending', ?, 'unread', ?, ?)""",
+                    (paper_id, entry_title, entry_url, sub_folder_id, now, now)
+                )
+                imported_count += 1
 
         conn.execute(
             "UPDATE topics SET last_checked_at=? WHERE id=?",
-            (datetime.utcnow().isoformat(), topic_id),
+            (now, topic_id),
         )
         conn.commit()
+        print(f"[tracker] Imported {imported_count} papers for topic '{title}' into folder '{sub_folder_name}'")
 
     except Exception as exc:
         print(f"[tracker] ArXiv search error for topic {topic_id}: {exc}")
     finally:
         conn.close()
+

@@ -1,4 +1,5 @@
 import { fetchAPI } from './api.js';
+import { authFetch } from './utils/http.js';
 
 export function renderProgressPage() {
     return `
@@ -79,7 +80,7 @@ export async function initProgressPage() {
             const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
             
             // Fetch stats
-            const statsRes = await fetch(`${API_BASE}/vocab/stats`);
+            const statsRes = await authFetch(`${API_BASE}/vocab/stats`);
             const stats = await statsRes.json();
             
             document.getElementById('stat-total').textContent = stats.total;
@@ -104,11 +105,11 @@ export async function initProgressPage() {
             }, 100);
 
             // Fetch Forecast
-            const forecastRes = await fetch(`${API_BASE}/vocab/forecast`);
+            const forecastRes = await authFetch(`${API_BASE}/vocab/forecast`);
             const forecast = await forecastRes.json();
 
             // Fetch paper stats
-            const paperStatsRes = await fetch(`${API_BASE}/papers/stats`);
+            const paperStatsRes = await authFetch(`${API_BASE}/papers/stats`);
             const paperStats = await paperStatsRes.json();
             document.getElementById('stat-papers-imported').textContent = paperStats.imported_7d ?? 0;
             document.getElementById('stat-papers-viewed').textContent = paperStats.viewed_7d ?? 0;
