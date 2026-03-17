@@ -343,12 +343,14 @@ async def import_vocab_file(
         try:
             import openpyxl
             wb = openpyxl.load_workbook(BytesIO(contents), data_only=True)
-            sheet = wb.active
             rows = []
-            for row in sheet.iter_rows(values_only=True):
-                non_empty = [str(cell).strip() for cell in row if cell is not None]
-                if non_empty:
-                    rows.append(" | ".join(non_empty))
+            for sheet_name in wb.sheetnames:
+                sheet = wb[sheet_name]
+                rows.append(f"--- Sheet: {sheet_name} ---")
+                for row in sheet.iter_rows(values_only=True):
+                    non_empty = [str(cell).strip() for cell in row if cell is not None]
+                    if non_empty:
+                        rows.append(" | ".join(non_empty))
             extracted_text = "\n".join(rows)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"解析 Excel 失败：{str(e)}")
