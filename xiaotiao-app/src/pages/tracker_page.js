@@ -36,28 +36,44 @@ export function renderTrackerPage() {
           <label style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:8px;display:block;">来源选择</label>
           <div style="display:flex;flex-wrap:wrap;gap:10px;">
             <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
-              <input type="checkbox" class="tracker-source-cb" value="arxiv" checked style="accent-color:#f472b6;">
+              <input type="checkbox" class="tracker-source-cb" value="openalex" checked style="accent-color:#f472b6;">
+              <span>OpenAlex</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);">全球学术库</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
+              <input type="checkbox" class="tracker-source-cb" value="semantic_scholar" checked style="accent-color:#f472b6;">
+              <span>Semantic Scholar</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);">AI语义搜索</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
+              <input type="checkbox" class="tracker-source-cb" value="crossref" style="accent-color:#f472b6;">
+              <span>CrossRef</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);">DOI期刊</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
+              <input type="checkbox" class="tracker-source-cb" value="arxiv" style="accent-color:#f472b6;">
               <span>ArXiv</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);">预印本</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
+              <input type="checkbox" class="tracker-source-cb" value="doaj" style="accent-color:#f472b6;">
+              <span>DOAJ</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);">开放获取</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
+              <input type="checkbox" class="tracker-source-cb" value="core" style="accent-color:#f472b6;">
+              <span>CORE</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);">开放论文</span>
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
               <input type="checkbox" class="tracker-source-cb" value="ssrn" style="accent-color:#f472b6;">
               <span>SSRN</span>
-              <span style="font-size:0.7rem;color:#4ade80;background:rgba(74,222,128,0.1);padding:1px 6px;border-radius:6px;">现已上线</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);">社科/法律</span>
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
               <input type="checkbox" class="tracker-source-cb" value="cnki" style="accent-color:#f472b6;">
-              <span>CNKI (中国知网)</span>
-              <span style="font-size:0.7rem;color:#4ade80;background:rgba(74,222,128,0.1);padding:1px 6px;border-radius:6px;">现已上线</span>
-            </label>
-            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
-              <input type="checkbox" class="tracker-source-cb" value="heinonline" style="accent-color:#f472b6;">
-              <span>HeinOnline</span>
-              <span style="font-size:0.7rem;color:#4ade80;background:rgba(74,222,128,0.1);padding:1px 6px;border-radius:6px;">现已上线</span>
-            </label>
-            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass-bg);border-radius:10px;cursor:pointer;font-size:0.85rem;color:var(--text-primary);border:1px solid transparent;transition:border-color 0.2s;" class="source-checkbox-label">
-              <input type="checkbox" class="tracker-source-cb" value="google_scholar" style="accent-color:#f472b6;">
-              <span>Google Scholar</span>
-              <span style="font-size:0.7rem;color:#4ade80;background:rgba(74,222,128,0.1);padding:1px 6px;border-radius:6px;">现已上线</span>
+              <span>CNKI (知网)</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);">中文论文</span>
             </label>
           </div>
         </div>
@@ -223,13 +239,14 @@ async function loadDiscoveredPapers() {
 
 const SOURCE_LABELS = {
   arxiv: 'ArXiv',
+  openalex: 'OpenAlex',
+  semantic_scholar: 'Semantic Scholar',
+  crossref: 'CrossRef',
+  doaj: 'DOAJ',
+  core: 'CORE',
   ssrn: 'SSRN',
   cnki: 'CNKI',
-  heinonline: 'HeinOnline',
-  google_scholar: 'Google Scholar',
 };
-
-const COMING_SOON_SOURCES = [];
 
 function getSelectedSources() {
   const checkboxes = document.querySelectorAll('.tracker-source-cb:checked');
@@ -305,16 +322,47 @@ window.__deleteTopic = async (id) => {
 };
 
 window.__checkNow = async (id) => {
+  // Find the button and show searching state
+  const btn = document.querySelector(`button[onclick="window.__checkNow('${id}')"]`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="search-spinner"></span> 正在搜索...`;
+    btn.style.opacity = '0.7';
+  }
+
   try {
-    await authFetch(`${API_BASE}/topics/${id}/check-now`, { method: 'POST' });
-    window.showToast('正在搜索最新论文...', 'info');
-    // Refresh after a short delay to show results
-    setTimeout(() => {
-      loadTopics();
-      loadDiscoveredPapers();
+    const res = await authFetch(`${API_BASE}/topics/${id}/check-now`, { method: 'POST' });
+    const result = await res.json();
+    const sourceCount = (result.sources || []).length;
+    window.showToast(`正在从 ${sourceCount} 个来源搜索论文，请稍候...`, 'info');
+
+    // Progressive polling: check results at intervals
+    let pollCount = 0;
+    const pollInterval = setInterval(async () => {
+      pollCount++;
+      await loadDiscoveredPapers();
+      if (btn) {
+        const dots = '.'.repeat((pollCount % 3) + 1);
+        btn.innerHTML = `<span class="search-spinner"></span> 搜索中${dots}`;
+      }
+      if (pollCount >= 8) {
+        clearInterval(pollInterval);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '立即检查';
+          btn.style.opacity = '1';
+        }
+        await loadTopics();
+        window.showToast('搜索完成！查看发现的论文', 'success');
+      }
     }, 5000);
   } catch (e) {
-    window.showToast('检查失败', 'error');
+    window.showToast('检查失败: ' + e.message, 'error');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '立即检查';
+      btn.style.opacity = '1';
+    }
   }
 };
 

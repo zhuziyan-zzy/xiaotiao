@@ -193,6 +193,31 @@ AI_FEATURES = [
             {"step": "response", "label": "返回前端", "test": "auto"},
         ],
     },
+    {
+        "id": "concept_analysis",
+        "name": "概念解析",
+        "icon": "🔎",
+        "frontend": "选词工具",
+        "frontend_path": "/#/translation",
+        "frontend_action": "选中英文单词 → AI 语义解析",
+        "template": None,
+        "call_type": "JSON",
+        "description": "对选中的英文词汇或短语进行语义解析，返回音标、释义、例句和关联词汇",
+        "how_it_works": [
+            {"who": "user", "text": "👤 用户在页面上选中英文单词"},
+            {"who": "system", "text": "⚙️ 发送词汇到后端 /vocab/concept"},
+            {"who": "ai", "text": "🤖 AI 返回释义、例句、关联词(JSON)"},
+            {"who": "system", "text": "📤 前端弹窗展示解析结果"},
+        ],
+        "requires": ["🔑 AI API Key(如 Gemini/OpenAI)"],
+        "variables": [],
+        "pipeline": [
+            {"step": "request", "label": "前端请求", "test": "route"},
+            {"step": "llm", "label": "AI 解析", "test": "llm_json"},
+            {"step": "parse", "label": "JSON 解析", "test": "auto"},
+            {"step": "response", "label": "返回前端", "test": "auto"},
+        ],
+    },
 ]
 
 

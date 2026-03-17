@@ -103,6 +103,7 @@ FEATURE_REQUIRED_CAPS: dict[str, list[str]] = {
     "multimodal":       ["json", "vision"],
     "paper_ai":         ["stream"],
     "vocab_import":     ["json"],  # vision is optional for vocab
+    "concept_analysis": ["json"],
 }
 
 _FEATURE_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "feature_providers.json")
