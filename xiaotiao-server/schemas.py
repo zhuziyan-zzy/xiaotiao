@@ -25,6 +25,14 @@ class TopicGenerateRequest(BaseModel):
         # E-4: strip HTML tags from topic input
         return [re.sub(r'<[^>]+>', '', t).strip() for t in v]
 
+    @field_validator('domains')
+    @classmethod
+    def validate_domains(cls, v):
+        for d in v:
+            if len(d) > 100:
+                raise ValueError('单个领域名不能超过 100 字符')
+        return [re.sub(r'<[^>]+>', '', d).strip() for d in v]
+
 class NewWord(BaseModel):
     word: str = Field(description="The new vocabulary word")
     definition_zh: str = Field(description="Chinese definition of the word")

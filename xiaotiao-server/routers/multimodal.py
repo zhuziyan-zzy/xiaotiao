@@ -12,13 +12,6 @@ from services.llm import call_claude_vision_json
 router = APIRouter(prefix="/multimodal", tags=["多模态解析"])
 
 
-def _load_system_prompt(filename: str) -> str:
-    """Load a raw prompt file for vision calls (can't use Jinja2 for vision API)."""
-    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", filename)
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
 @router.post(
     "/extract",
     response_model=MultimodalExtractResponse,
@@ -62,7 +55,8 @@ async def extract_vocabulary(
     elif filename.endswith((".jpg", ".jpeg", ".png")):
         base64_image = base64.b64encode(contents).decode("utf-8")
         media_type = "image/jpeg" if filename.endswith(("jpg", "jpeg")) else "image/png"
-        system_prompt = _load_system_prompt("multimodal.txt")
+        # Use PromptEngine to render the .j2 template (system prompt only)
+        system_prompt, _ = prompt_engine.render("multimodal.j2", domain=domain, extracted_text="")
         user_prompt = f"Domain focus: {domain}\n\nPlease analyze the provided content."
 
         try:
@@ -71,7 +65,8 @@ async def extract_vocabulary(
                 user_prompt=user_prompt,
                 base64_image=base64_image,
                 media_type=media_type,
-                max_tokens=4000
+                max_tokens=4000,
+                feature_id="multimodal",
             )
             return MultimodalExtractResponse(**data)
         except Exception as e:
@@ -88,6 +83,7 @@ async def extract_vocabulary(
                 template_name="multimodal.j2",
                 response_model=MultimodalExtractResponse,
                 max_tokens=4000,
+                feature_id="multimodal",
                 domain=domain,
                 extracted_text=truncated_text,
             )

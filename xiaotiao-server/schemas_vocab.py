@@ -36,14 +36,23 @@ class VocabItemResponse(BaseModel):
     next_review_date: Optional[datetime]
     is_mastered: bool
 
+    # Enhanced tracking fields
+    duplicate_count: int = 0
+    is_easily_forgotten: bool = False
+
 class VocabStatsResponse(BaseModel):
     total: int
     active: int
     mastered: int
     need_review_today: int
+    today_count: int = 0
+    month_count: int = 0
+    year_count: int = 0
+    easily_forgotten: int = 0
 
 class VocabListResponse(BaseModel):
     items: List[VocabItemResponse]
     total_count: int
     page: int
     total_pages: int
+

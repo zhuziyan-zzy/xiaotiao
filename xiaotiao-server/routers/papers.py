@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from db.database import get_db
+import sqlite3 as _sqlite3
 from services.llm import call_claude_json, call_claude_stream
 from services.paper_service import (
     process_paper_url,
@@ -492,13 +493,13 @@ async def insight_paper(paper_id: str, request: Request, body: Optional[InsightR
 
     async def generate():
         full_text = ""
-        async for chunk in call_claude_stream(system_prompt, f"请分析以下论文：\n\n{paper_text[:6000]}"):
+        async for chunk in call_claude_stream(system_prompt, f"请分析以下论文：\n\n{paper_text[:6000]}", feature_id="paper_ai"):
             full_text += chunk
             yield chunk
 
         # Save insight after streaming completes
         try:
-            conn = __import__('sqlite3').connect(db_path or os.getenv("DB_PATH", "./db/xiaotiao.db"))
+            conn = _sqlite3.connect(db_path or os.getenv("DB_PATH", "./db/xiaotiao.db"))
             conn.execute("UPDATE papers SET insight=?, updated_at=? WHERE id=?",
                          (full_text, datetime.utcnow().isoformat(), paper_id))
             conn.commit()
@@ -565,13 +566,13 @@ async def chat_with_paper(paper_id: str, body: ChatRequest, request: Request, db
 
     async def generate():
         full_response = ""
-        async for chunk in call_claude_stream(system_prompt, body.message):
+        async for chunk in call_claude_stream(system_prompt, body.message, feature_id="paper_ai"):
             full_response += chunk
             yield chunk
 
         # Save assistant response
         try:
-            conn = __import__('sqlite3').connect(db_path or os.getenv("DB_PATH", "./db/xiaotiao.db"))
+            conn = _sqlite3.connect(db_path or os.getenv("DB_PATH", "./db/xiaotiao.db"))
             conn.execute("INSERT INTO paper_chats (paper_id, role, content) VALUES (?, 'assistant', ?)",
                          (paper_id, full_response))
             conn.commit()
@@ -598,7 +599,8 @@ async def page_summary(paper_id: str, body: PageSummaryRequest):
     async def generate():
         async for chunk in call_claude_stream(
             system_prompt,
-            f"第 {body.page_number} 页内容：\n{body.page_text[:3000]}"
+            f"第 {body.page_number} 页内容：\n{body.page_text[:3000]}",
+            feature_id="paper_ai",
         ):
             yield chunk
 
@@ -614,7 +616,7 @@ async def translate_selection(paper_id: str, body: TextRequest):
     system_prompt = "你是一位专业翻译。请将以下英文学术文本翻译为准确、流畅的中文。只输出翻译结果，不要添加解释。"
 
     async def generate():
-        async for chunk in call_claude_stream(system_prompt, body.text[:2000]):
+        async for chunk in call_claude_stream(system_prompt, body.text[:2000], feature_id="paper_ai"):
             yield chunk
 
     return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
@@ -653,7 +655,7 @@ async def summarize_selection(paper_id: str, body: TextRequest):
 3. 使用简洁中文"""
 
     async def generate():
-        async for chunk in call_claude_stream(system_prompt, body.text[:2000]):
+        async for chunk in call_claude_stream(system_prompt, body.text[:2000], feature_id="paper_ai"):
             yield chunk
 
     return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")

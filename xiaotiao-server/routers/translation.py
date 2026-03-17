@@ -21,6 +21,7 @@ async def run_translation(req: TranslationRequest):
             template_name="translation.j2",
             response_model=TranslationResponse,
             max_tokens=4000,
+            feature_id="translation",
             # 模板变量
             direction=req.direction,
             source_text=req.source_text,

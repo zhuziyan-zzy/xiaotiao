@@ -42,6 +42,7 @@ async def analyze_article(req: ArticleAnalyzeRequest):
             template_name="article_analyze.j2",
             response_model=ArticleAnalyzeResponse,
             max_tokens=4000,
+            feature_id="article_analyze",
             # 模板变量
             analysis_mode=req.analysis_mode,
             source_text=req.source_text,
