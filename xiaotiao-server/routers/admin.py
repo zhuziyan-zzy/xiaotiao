@@ -1471,12 +1471,78 @@ async def save_prompt(filename: str, request: Request):
     return HTMLResponse(_page(f"编辑 {filename}", body))
 
 
-# ── Database Viewer ──────────────────────────────────────
+# ── Database Viewer + Editing with Approval ──────────────
 
 _DB_REGISTRY = {
     "xiaotiao": {"path": os.getenv("DB_PATH", "./db/xiaotiao.db"), "label": "主数据库 (xiaotiao)"},
     "auth": {"path": os.getenv("AUTH_DB_PATH", "./db/auth.db"), "label": "认证数据库 (auth)"},
 }
+
+_PENDING_CHANGES_PATH = os.path.join(os.path.dirname(__file__), "..", "pending_db_changes.json")
+
+
+def _load_pending() -> list:
+    try:
+        with open(_PENDING_CHANGES_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _save_pending(changes: list) -> None:
+    with open(_PENDING_CHANGES_PATH, "w", encoding="utf-8") as f:
+        json.dump(changes, f, indent=2, ensure_ascii=False)
+
+
+_DB_CSS = """
+.db-card{background:rgba(30,41,59,.7);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid rgba(148,163,184,.08)}
+.db-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-weight:600;color:#e2e8f0}
+.db-path{font-size:.7rem;color:#64748b;font-weight:400}
+.db-tables{display:flex;flex-direction:column;gap:4px}
+.db-table-link{display:flex;justify-content:space-between;padding:8px 12px;border-radius:6px;background:rgba(99,102,241,.04);color:#a5b4fc;text-decoration:none;font-size:.82rem;transition:background .2s}
+.db-table-link:hover{background:rgba(99,102,241,.12)}
+.db-table-count{color:#64748b;font-size:.72rem}
+.back-link{color:#94a3b8;text-decoration:none;font-size:.85rem}
+.back-link:hover{color:#e2e8f0}
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.db-table-wrap{overflow-x:auto;background:rgba(30,41,59,.7);border-radius:10px;border:1px solid rgba(148,163,184,.08)}
+.db-table{width:100%;border-collapse:collapse;font-size:.75rem}
+.db-table th{background:rgba(99,102,241,.08);color:#a5b4fc;padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;border-bottom:1px solid rgba(148,163,184,.1)}
+.db-table td{padding:6px 10px;border-bottom:1px solid rgba(148,163,184,.04);color:#cbd5e1;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.db-table tr:hover td{background:rgba(99,102,241,.03)}
+.db-pagination{display:flex;justify-content:center;align-items:center;gap:16px;padding:12px;color:#94a3b8;font-size:.8rem}
+.db-pagination a{color:#6366f1;text-decoration:none}
+.db-pagination a:hover{color:#a5b4fc}
+.btn-edit{padding:2px 8px;border-radius:4px;background:rgba(99,102,241,.12);color:#a5b4fc;border:none;cursor:pointer;font-size:.7rem}
+.btn-edit:hover{background:rgba(99,102,241,.25)}
+.pending-badge{display:inline-block;padding:2px 8px;border-radius:10px;background:rgba(251,191,36,.15);color:#fbbf24;font-size:.72rem;font-weight:600}
+/* Edit modal */
+.edit-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center}
+.edit-modal.show{display:flex}
+.edit-panel{background:#1e293b;border-radius:12px;padding:20px;width:90%;max-width:600px;max-height:80vh;overflow-y:auto;border:1px solid rgba(148,163,184,.1)}
+.edit-panel h3{margin:0 0 12px;color:#e2e8f0}
+.edit-field{margin-bottom:10px}
+.edit-field label{display:block;font-size:.72rem;color:#94a3b8;margin-bottom:3px}
+.edit-field input,.edit-field textarea{width:100%;padding:6px 8px;border-radius:6px;background:#0f172a;color:#e2e8f0;border:1px solid rgba(148,163,184,.15);font-size:.8rem;font-family:inherit;box-sizing:border-box}
+.edit-field textarea{min-height:60px;resize:vertical}
+.edit-btns{display:flex;gap:8px;margin-top:12px}
+.edit-btns button{padding:6px 16px;border-radius:6px;border:none;cursor:pointer;font-size:.8rem}
+.btn-submit{background:rgba(99,102,241,.2);color:#a5b4fc}
+.btn-submit:hover{background:rgba(99,102,241,.3)}
+.btn-cancel{background:rgba(148,163,184,.1);color:#94a3b8}
+/* Pending changes */
+.pending-card{background:rgba(30,41,59,.7);border-radius:10px;padding:14px;margin-bottom:10px;border:1px solid rgba(148,163,184,.08)}
+.pending-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px}
+.pending-meta{font-size:.72rem;color:#94a3b8}
+.pending-diff{font-size:.75rem;margin:6px 0}
+.pending-diff .old{color:#f87171;text-decoration:line-through}
+.pending-diff .new{color:#4ade80}
+.pending-actions{display:flex;gap:6px;margin-top:8px}
+.btn-approve{padding:4px 12px;border-radius:6px;background:rgba(74,222,128,.15);color:#4ade80;border:none;cursor:pointer;font-size:.75rem}
+.btn-approve:hover{background:rgba(74,222,128,.25)}
+.btn-reject{padding:4px 12px;border-radius:6px;background:rgba(248,113,113,.12);color:#f87171;border:none;cursor:pointer;font-size:.75rem}
+.btn-reject:hover{background:rgba(248,113,113,.22)}
+"""
 
 
 @router.get("/database", response_class=HTMLResponse, include_in_schema=False)
@@ -1485,6 +1551,9 @@ def admin_database(request: Request):
         return RedirectResponse("/admin", status_code=302)
 
     import sqlite3
+    pending = _load_pending()
+    pending_count = sum(1 for p in pending if p.get("status") == "pending")
+
     db_cards = ""
     for db_id, db_info in _DB_REGISTRY.items():
         db_path = db_info["path"]
@@ -1509,26 +1578,96 @@ def admin_database(request: Request):
         </div>
         """
 
+    pending_link = ""
+    if pending_count > 0:
+        pending_link = f'<a href="/admin/database/pending" class="pending-badge">⏳ {pending_count} 条待审核变更</a>'
+
     body = f"""
     <div class="section-header">
         <h2>🗄️ 数据库浏览器</h2>
-        <a href="/admin/dashboard" class="back-link">← 返回仪表盘</a>
+        <div>{pending_link} <a href="/admin/dashboard" class="back-link">← 返回仪表盘</a></div>
     </div>
-    <style>
-    .db-card{{background:rgba(30,41,59,.7);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid rgba(148,163,184,.08)}}
-    .db-card-header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-weight:600;color:#e2e8f0}}
-    .db-path{{font-size:.7rem;color:#64748b;font-weight:400}}
-    .db-tables{{display:flex;flex-direction:column;gap:4px}}
-    .db-table-link{{display:flex;justify-content:space-between;padding:8px 12px;border-radius:6px;background:rgba(99,102,241,.04);color:#a5b4fc;text-decoration:none;font-size:.82rem;transition:background .2s}}
-    .db-table-link:hover{{background:rgba(99,102,241,.12)}}
-    .db-table-count{{color:#64748b;font-size:.72rem}}
-    .back-link{{color:#94a3b8;text-decoration:none;font-size:.85rem}}
-    .back-link:hover{{color:#e2e8f0}}
-    .section-header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}}
-    </style>
+    <style>{_DB_CSS}</style>
     {db_cards}
     """
     return HTMLResponse(_page("数据库浏览器", body))
+
+
+@router.get("/database/pending", response_class=HTMLResponse, include_in_schema=False)
+def admin_pending_changes(request: Request):
+    if not _check_session(request):
+        return RedirectResponse("/admin", status_code=302)
+
+    pending = _load_pending()
+    pending_items = [p for p in pending if p.get("status") == "pending"]
+
+    cards_html = ""
+    if not pending_items:
+        cards_html = '<p style="color:#64748b;text-align:center;padding:20px">✅ 没有待审核的变更</p>'
+    else:
+        for idx, p in enumerate(pending):
+            if p.get("status") != "pending":
+                continue
+            db_label = _DB_REGISTRY.get(p["db_id"], {}).get("label", p["db_id"])
+            diff_html = ""
+            for col, vals in p.get("changes", {}).items():
+                old_v = html_mod.escape(str(vals.get("old", ""))[:80])
+                new_v = html_mod.escape(str(vals.get("new", ""))[:80])
+                diff_html += f'<div class="pending-diff"><strong>{html_mod.escape(col)}</strong>: <span class="old">{old_v}</span> → <span class="new">{new_v}</span></div>'
+
+            pk_desc = ", ".join(f"{k}={v}" for k, v in p.get("pk", {}).items())
+            cards_html += f"""
+            <div class="pending-card" id="pending-{idx}">
+                <div class="pending-header">
+                    <span style="color:#e2e8f0;font-weight:600">📋 {html_mod.escape(p['table'])} — {pk_desc}</span>
+                    <span class="pending-meta">{db_label} · {p.get('timestamp', '')}</span>
+                </div>
+                {diff_html}
+                <div class="pending-actions">
+                    <button class="btn-approve" onclick="handlePending({idx}, 'approve')">✅ 批准执行</button>
+                    <button class="btn-reject" onclick="handlePending({idx}, 'reject')">❌ 拒绝</button>
+                </div>
+            </div>
+            """
+
+    body = f"""
+    <div class="section-header">
+        <h2>⏳ 待审核变更 ({len(pending_items)})</h2>
+        <a href="/admin/database" class="back-link">← 返回数据库</a>
+    </div>
+    <style>{_DB_CSS}</style>
+    {cards_html}
+    <script>
+    async function handlePending(idx, action) {{
+        const card = document.getElementById('pending-' + idx);
+        card.style.opacity = '0.5';
+        try {{
+            const resp = await fetch('/admin/api/db-change-action', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                credentials: 'include',
+                body: JSON.stringify({{index: idx, action: action}})
+            }});
+            const data = await resp.json();
+            if (data.ok) {{
+                card.style.display = 'none';
+                if (action === 'approve') {{
+                    alert('✅ 变更已执行');
+                }} else {{
+                    alert('❌ 变更已拒绝');
+                }}
+            }} else {{
+                alert('操作失败: ' + (data.error || '未知错误'));
+                card.style.opacity = '1';
+            }}
+        }} catch(e) {{
+            alert('网络错误');
+            card.style.opacity = '1';
+        }}
+    }}
+    </script>
+    """
+    return HTMLResponse(_page("待审核变更", body))
 
 
 @router.get("/database/{db_id}/{table_name}", response_class=HTMLResponse, include_in_schema=False)
@@ -1548,24 +1687,30 @@ def admin_database_table(request: Request, db_id: str, table_name: str):
     try:
         conn = sqlite3.connect(db_info["path"])
         conn.row_factory = sqlite3.Row
-        # Get columns
-        cursor = conn.execute(f"PRAGMA table_info([{table_name}])")
-        columns = [row["name"] for row in cursor.fetchall()]
-        # Get total count
+        # Get columns + primary key
+        col_info = conn.execute(f"PRAGMA table_info([{table_name}])").fetchall()
+        columns = [row["name"] for row in col_info]
+        pk_cols = [row["name"] for row in col_info if row["pk"] > 0]
+        if not pk_cols:
+            pk_cols = [columns[0]] if columns else []
         total = conn.execute(f"SELECT COUNT(*) as c FROM [{table_name}]").fetchone()["c"]
-        # Get rows
         rows = conn.execute(f"SELECT * FROM [{table_name}] LIMIT {per_page} OFFSET {offset}").fetchall()
         conn.close()
     except Exception as exc:
         return HTMLResponse(_page("错误", f"<p style='color:#f87171'>❌ 查询失败: {exc}</p>"))
 
-    total_pages = (total + per_page - 1) // per_page
+    total_pages = max(1, (total + per_page - 1) // per_page)
 
-    # Build table HTML
-    thead = "".join(f"<th>{html_mod.escape(c)}</th>" for c in columns)
+    # Build table HTML with edit buttons
+    thead = "<th>操作</th>" + "".join(f"<th>{html_mod.escape(c)}</th>" for c in columns)
     tbody = ""
     for row in rows:
-        cells = ""
+        # Build PK JSON for this row
+        pk_data = {c: (row[c] if row[c] is not None else "") for c in pk_cols}
+        row_data = {c: (str(row[c]) if row[c] is not None else "") for c in columns}
+        pk_json = html_mod.escape(json.dumps(pk_data, ensure_ascii=False))
+        row_json = html_mod.escape(json.dumps(row_data, ensure_ascii=False))
+        cells = f'<td><button class="btn-edit" onclick=\'openEdit({pk_json}, {row_json})\'>✏️ 编辑</button></td>'
         for c in columns:
             val = row[c]
             cell_str = html_mod.escape(str(val) if val is not None else "NULL")
@@ -1583,25 +1728,17 @@ def admin_database_table(request: Request, db_id: str, table_name: str):
         pagination += f'<a href="/admin/database/{db_id}/{table_name}?page={page+1}">下一页 →</a>'
     pagination += '</div>'
 
+    # Columns JSON for modal
+    cols_json = json.dumps(columns, ensure_ascii=False)
+    pk_cols_json = json.dumps(pk_cols, ensure_ascii=False)
+
     body = f"""
     <div class="section-header">
         <h2>📋 {table_name}</h2>
         <a href="/admin/database" class="back-link">← 返回数据库列表</a>
     </div>
-    <p style="color:#94a3b8;font-size:.8rem;margin-bottom:12px">🗄️ {db_info['label']} · {total} 行</p>
-    <style>
-    .db-table-wrap{{overflow-x:auto;background:rgba(30,41,59,.7);border-radius:10px;border:1px solid rgba(148,163,184,.08)}}
-    .db-table{{width:100%;border-collapse:collapse;font-size:.75rem}}
-    .db-table th{{background:rgba(99,102,241,.08);color:#a5b4fc;padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;border-bottom:1px solid rgba(148,163,184,.1)}}
-    .db-table td{{padding:6px 10px;border-bottom:1px solid rgba(148,163,184,.04);color:#cbd5e1;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
-    .db-table tr:hover td{{background:rgba(99,102,241,.03)}}
-    .db-pagination{{display:flex;justify-content:center;align-items:center;gap:16px;padding:12px;color:#94a3b8;font-size:.8rem}}
-    .db-pagination a{{color:#6366f1;text-decoration:none}}
-    .db-pagination a:hover{{color:#a5b4fc}}
-    .back-link{{color:#94a3b8;text-decoration:none;font-size:.85rem}}
-    .back-link:hover{{color:#e2e8f0}}
-    .section-header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}}
-    </style>
+    <p style="color:#94a3b8;font-size:.8rem;margin-bottom:12px">🗄️ {db_info['label']} · {total} 行 · 点击行首「✏️ 编辑」可修改数据（需审批后生效）</p>
+    <style>{_DB_CSS}</style>
     <div class="db-table-wrap">
         <table class="db-table">
             <thead><tr>{thead}</tr></thead>
@@ -1609,5 +1746,168 @@ def admin_database_table(request: Request, db_id: str, table_name: str):
         </table>
     </div>
     {pagination}
+
+    <!-- Edit Modal -->
+    <div class="edit-modal" id="editModal">
+        <div class="edit-panel">
+            <h3>✏️ 编辑行数据</h3>
+            <div id="editFields"></div>
+            <p style="color:#fbbf24;font-size:.72rem;margin-top:8px">⚠️ 修改不会立即生效，需管理员在「待审核变更」中批准后才会执行。</p>
+            <div class="edit-btns">
+                <button class="btn-submit" onclick="submitEdit()">📤 提交变更</button>
+                <button class="btn-cancel" onclick="closeEdit()">取消</button>
+            </div>
+            <div id="editMsg" style="margin-top:8px;font-size:.75rem"></div>
+        </div>
+    </div>
+
+    <script>
+    const DB_ID = '{db_id}';
+    const TABLE = '{table_name}';
+    const COLUMNS = {cols_json};
+    const PK_COLS = {pk_cols_json};
+    let currentPK = {{}};
+    let originalData = {{}};
+
+    function openEdit(pk, row) {{
+        currentPK = typeof pk === 'string' ? JSON.parse(pk) : pk;
+        originalData = typeof row === 'string' ? JSON.parse(row) : row;
+        const container = document.getElementById('editFields');
+        container.innerHTML = '';
+        for (const col of COLUMNS) {{
+            const isPK = PK_COLS.includes(col);
+            const val = originalData[col] || '';
+            const field = document.createElement('div');
+            field.className = 'edit-field';
+            const long = val.length > 60;
+            field.innerHTML = '<label>' + col + (isPK ? ' 🔑 (主键)' : '') + '</label>' +
+                (long ? '<textarea id="ef-' + col + '"' + (isPK ? ' readonly style="opacity:.6"' : '') + '>' + val.replace(/</g,'&lt;') + '</textarea>'
+                       : '<input id="ef-' + col + '" value="' + val.replace(/"/g,'&quot;') + '"' + (isPK ? ' readonly style="opacity:.6"' : '') + '>');
+            container.appendChild(field);
+        }}
+        document.getElementById('editModal').classList.add('show');
+        document.getElementById('editMsg').textContent = '';
+    }}
+
+    function closeEdit() {{
+        document.getElementById('editModal').classList.remove('show');
+    }}
+
+    async function submitEdit() {{
+        const changes = {{}};
+        for (const col of COLUMNS) {{
+            const el = document.getElementById('ef-' + col);
+            const newVal = el.value || el.textContent || '';
+            if (newVal !== (originalData[col] || '')) {{
+                changes[col] = {{old: originalData[col] || '', new: newVal}};
+            }}
+        }}
+        if (Object.keys(changes).length === 0) {{
+            document.getElementById('editMsg').textContent = '没有变更';
+            document.getElementById('editMsg').style.color = '#94a3b8';
+            return;
+        }}
+        const msgEl = document.getElementById('editMsg');
+        msgEl.textContent = '⏳ 提交中...';
+        msgEl.style.color = '#94a3b8';
+        try {{
+            const resp = await fetch('/admin/api/db-submit-change', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                credentials: 'include',
+                body: JSON.stringify({{db_id: DB_ID, table: TABLE, pk: currentPK, changes: changes}})
+            }});
+            const data = await resp.json();
+            if (data.ok) {{
+                msgEl.textContent = '✅ 已提交，等待管理员审批';
+                msgEl.style.color = '#4ade80';
+                setTimeout(() => closeEdit(), 1500);
+            }} else {{
+                msgEl.textContent = '❌ ' + (data.error || '提交失败');
+                msgEl.style.color = '#f87171';
+            }}
+        }} catch(e) {{
+            msgEl.textContent = '❌ 网络错误';
+            msgEl.style.color = '#f87171';
+        }}
+    }}
+
+    document.getElementById('editModal').addEventListener('click', function(e) {{
+        if (e.target === this) closeEdit();
+    }});
+    </script>
     """
     return HTMLResponse(_page(f"表: {table_name}", body))
+
+
+# ── Database change API endpoints ──
+
+@router.post("/api/db-submit-change", include_in_schema=False)
+async def db_submit_change(request: Request):
+    if not _check_session(request):
+        return JSONResponse({"ok": False, "error": "未登录"}, status_code=401)
+    try:
+        body = await request.json()
+        import datetime
+        change = {
+            "db_id": body["db_id"],
+            "table": body["table"],
+            "pk": body["pk"],
+            "changes": body["changes"],
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "pending",
+        }
+        pending = _load_pending()
+        pending.append(change)
+        _save_pending(pending)
+        return JSONResponse({"ok": True})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
+
+@router.post("/api/db-change-action", include_in_schema=False)
+async def db_change_action(request: Request):
+    if not _check_session(request):
+        return JSONResponse({"ok": False, "error": "未登录"}, status_code=401)
+    try:
+        body = await request.json()
+        idx = body["index"]
+        action = body["action"]  # "approve" or "reject"
+        pending = _load_pending()
+        if idx < 0 or idx >= len(pending):
+            return JSONResponse({"ok": False, "error": "索引无效"})
+        item = pending[idx]
+        if item.get("status") != "pending":
+            return JSONResponse({"ok": False, "error": "该变更已处理"})
+
+        if action == "approve":
+            # Execute the change
+            import sqlite3
+            db_info = _DB_REGISTRY.get(item["db_id"])
+            if not db_info:
+                return JSONResponse({"ok": False, "error": "数据库不存在"})
+            conn = sqlite3.connect(db_info["path"])
+            # Build UPDATE statement
+            set_parts = []
+            values = []
+            for col, vals in item["changes"].items():
+                set_parts.append(f"[{col}] = ?")
+                values.append(vals["new"])
+            where_parts = []
+            for col, val in item["pk"].items():
+                where_parts.append(f"[{col}] = ?")
+                values.append(val)
+            sql = f"UPDATE [{item['table']}] SET {', '.join(set_parts)} WHERE {' AND '.join(where_parts)}"
+            conn.execute(sql, values)
+            conn.commit()
+            conn.close()
+            item["status"] = "approved"
+        else:
+            item["status"] = "rejected"
+
+        pending[idx] = item
+        _save_pending(pending)
+        return JSONResponse({"ok": True, "action": action})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
