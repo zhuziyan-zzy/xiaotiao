@@ -938,9 +938,10 @@ def admin_dashboard(request: Request):
             const keyEl = document.getElementById('key-' + p);
             const modelEl = document.getElementById('model-' + p);
             const baseUrlEl = document.getElementById('baseurl-' + p);
-            if (keyEl && keyEl.value) config[p + '_key'] = keyEl.value;
-            if (modelEl && modelEl.value) config[p + '_model'] = modelEl.value;
-            if (baseUrlEl && baseUrlEl.value.trim()) config[p + '_base_url'] = baseUrlEl.value.trim();
+            // Always send value (even empty) so server can delete removed keys
+            if (keyEl) config[p + '_key'] = keyEl.value || '';
+            if (modelEl) config[p + '_model'] = modelEl.value || '';
+            if (baseUrlEl) config[p + '_base_url'] = (baseUrlEl.value || '').trim();
         }});
         config.provider = provider;
 
@@ -1259,27 +1260,53 @@ async def save_config(request: Request):
             env_lines.append(line)
 
     # Map request body to env vars
-    updates = {}
+    updates = {}  # keys to set
+    deletes = []  # keys to remove from .env
     if body.get("provider"):
         updates["LLM_PROVIDER"] = body["provider"]
     for pid in ("gemini", "openai", "qwen", "anthropic"):
-        key_val = body.get(f"{pid}_key", "").strip()
-        if key_val:
-            updates[f"{pid.upper()}_API_KEY"] = key_val
-        model_val = body.get(f"{pid}_model", "").strip()
-        if model_val:
-            updates[f"{pid.upper()}_MODEL"] = model_val
-        base_url_val = body.get(f"{pid}_base_url", "").strip()
-        if base_url_val:
-            updates[f"{pid.upper()}_BASE_URL"] = base_url_val
+        key_field = f"{pid}_key"
+        model_field = f"{pid}_model"
+        base_url_field = f"{pid}_base_url"
+        env_key = f"{pid.upper()}_API_KEY"
+        env_model = f"{pid.upper()}_MODEL"
+        env_base_url = f"{pid.upper()}_BASE_URL"
 
-    # Update or append
+        # Handle key: set if non-empty, delete if empty and field was sent
+        if key_field in body:
+            val = (body[key_field] or "").strip()
+            if val:
+                updates[env_key] = val
+            else:
+                deletes.append(env_key)
+        if model_field in body:
+            val = (body[model_field] or "").strip()
+            if val:
+                updates[env_model] = val
+            else:
+                deletes.append(env_model)
+        if base_url_field in body:
+            val = (body[base_url_field] or "").strip()
+            if val:
+                updates[env_base_url] = val
+            else:
+                deletes.append(env_base_url)
+
+    # Update or append values
     for k, v in updates.items():
         line_content = f'{k}="{v}"' if " " in v else f"{k}={v}"
         if k in existing_keys:
             env_lines[existing_keys[k]] = line_content
         else:
             env_lines.append(line_content)
+
+    # Delete removed keys from .env lines
+    for k in deletes:
+        if k in existing_keys:
+            idx = existing_keys[k]
+            env_lines[idx] = f"# {k}="  # Comment out instead of removing to preserve line indices
+        # Also remove from runtime environment
+        os.environ.pop(k, None)
 
     # Write back
     ENV_PATH.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
@@ -1294,7 +1321,8 @@ async def save_config(request: Request):
     except ImportError:
         pass  # dotenv not available, manual os.environ update above is sufficient
 
-    return JSONResponse({"ok": True, "updated": list(updates.keys())})
+    changed = list(updates.keys()) + [f"{k} (已删除)" for k in deletes if k not in updates]
+    return JSONResponse({"ok": True, "updated": changed})
 
 
 @router.get("/api/status", include_in_schema=False)
