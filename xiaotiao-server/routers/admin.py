@@ -413,9 +413,18 @@ a:hover{text-decoration:underline}
 .api-override{font-size:.65rem;color:#fbbf24;background:rgba(251,191,36,.08);padding:1px 6px;border-radius:6px}
 .api-default{font-size:.65rem;color:#64748b;background:rgba(100,116,139,.08);padding:1px 6px;border-radius:6px}
 .api-assign-body{display:flex;align-items:center;gap:8px}
-.api-select{flex:1;padding:5px 8px;border-radius:6px;background:#1e293b;color:#e2e8f0;border:1px solid rgba(148,163,184,.15);font-size:.75rem;outline:none}
+.api-select{flex:1;padding:6px 10px;border-radius:6px;background:#1e293b;color:#e2e8f0;border:1px solid rgba(148,163,184,.15);font-size:.78rem;outline:none;min-width:0;max-width:100%}
 .api-select:focus{border-color:#6366f1}
+.api-select optgroup{color:#94a3b8;font-weight:600;font-size:.72rem}
+.api-select option{color:#e2e8f0;padding:4px;font-size:.78rem}
 .api-save-msg{font-size:.7rem;transition:opacity .3s}
+/* Expandable requirements */
+.req-expand{cursor:pointer;user-select:none}
+.req-expand-icon{transition:transform .2s;display:inline-block}
+.req-expand-icon.open{transform:rotate(90deg)}
+.req-detail{display:none;margin-top:8px;padding:10px 12px;background:rgba(99,102,241,.04);border-radius:8px;border:1px solid rgba(99,102,241,.06);font-size:.72rem;color:#94a3b8}
+.req-detail.show{display:block}
+.req-model-tag{display:inline-block;padding:1px 6px;border-radius:4px;margin:2px;font-size:.68rem;background:rgba(99,102,241,.08);color:#a5b4fc}
 """
 
 
@@ -618,10 +627,26 @@ def admin_dashboard(request: Request):
             connector = '<div class="hiw-connector"></div>' if idx < len(f.get("how_it_works", [])) - 1 else ""
             how_html += f'<div class="hiw-step {color_cls}"><span class="hiw-num">{idx+1}</span><span class="hiw-text">{step["text"]}</span></div>{connector}'
 
-        # Build requires HTML
+        # Build requires HTML with expandable API key details
         req_html = ""
         for r in f.get("requires", []):
             req_html += f'<span class="req-item">{r}</span>'
+        # Add expandable API key details section
+        api_detail_models = ""
+        for p in compatible:
+            if not p["compatible"]:
+                continue
+            key_status = '✅ 已配置' if p.get('has_key') else '❌ 未配置'
+            model_tags = ''.join(f'<span class="req-model-tag">{m}</span>' for m in p.get('models', []))
+            api_detail_models += f'<div style="margin:6px 0"><strong style="color:#e2e8f0">{p["name"]}</strong> <span style="font-size:.65rem">{key_status}</span><br>{model_tags}</div>'
+        req_html += f'''
+            <div class="req-expand" onclick="toggleReqDetail('{fid}')">
+                <span class="req-item" style="cursor:pointer">🔑 <span class="req-expand-icon" id="req-icon-{fid}">▶</span> 查看可用 API 及模型详情</span>
+            </div>
+            <div class="req-detail" id="req-detail-{fid}">
+                <div style="margin-bottom:6px;color:#a5b4fc;font-weight:600">该功能兼容的 API 提供商和模型：</div>
+                {api_detail_models}
+            </div>'''
 
         # Build per-feature API assignment selector
         fid = f["id"]
@@ -634,15 +659,18 @@ def admin_dashboard(request: Request):
         cur_badge_cls = "api-badge-active" if current_provider != "mock" else "api-badge-none"
         override_tag = '<span class="api-override">✏️ 手动指定</span>' if is_override else '<span class="api-default">🔄 全局默认</span>'
 
-        # Build dropdown options — only compatible providers
+        # Build dropdown options — each model as a separate option, grouped by provider
         options_html = f'<option value="default"{"" if is_override else " selected"}>🔄 使用全局默认</option>'
         for p in compatible:
             if not p["compatible"]:
                 continue
-            sel = " selected" if is_override and p["id"] == current_provider else ""
-            avail = "" if p["has_key"] else " (❌ 未配置Key)"
-            models_str = ", ".join(p.get("models", [])[:3])
-            options_html += f'<option value="{p["id"]}"{sel}>{p["name"]}{avail} [{models_str}]</option>'
+            avail = '' if p['has_key'] else ' ❌ 未配置Key'
+            options_html += f'<optgroup label="{p["name"]}{avail}">'
+            for model in p.get('models', []):
+                val = f'{p["id"]}:{model}'
+                sel = ' selected' if is_override and p['id'] == current_provider else ''
+                options_html += f'<option value="{p["id"]}"{sel}>  {model}</option>'
+            options_html += '</optgroup>'
 
         api_section = f'''
             <div class="api-assign-section" id="api-section-{fid}">
@@ -983,6 +1011,13 @@ def admin_dashboard(request: Request):
         }}
         btn.disabled = false;
         btn.innerHTML = '🧪 逐项测试全部功能';
+    }}
+
+    function toggleReqDetail(fid) {{
+        const detail = document.getElementById('req-detail-' + fid);
+        const icon = document.getElementById('req-icon-' + fid);
+        detail.classList.toggle('show');
+        icon.classList.toggle('open');
     }}
 
     async function setFeatureProvider(featureId, provider) {{
