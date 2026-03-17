@@ -1538,6 +1538,13 @@ _TABLE_LABELS = {
     # auth.db tables
     "users": "👤 用户账户 — 注册用户信息",
     "auth_sessions": "🔑 登录会话 — 用户认证 Token",
+    # SQLite internal FTS tables
+    "rag_chunks_fts": "🔍 RAG 全文索引",
+    "rag_chunks_fts_config": "⚙️ RAG 索引配置",
+    "rag_chunks_fts_content": "📄 RAG 索引内容",
+    "rag_chunks_fts_data": "💾 RAG 索引数据",
+    "rag_chunks_fts_docsize": "📏 RAG 文档大小",
+    "rag_chunks_fts_idx": "🗂️ RAG 索引目录",
 }
 
 

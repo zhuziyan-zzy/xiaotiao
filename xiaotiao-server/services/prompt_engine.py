@@ -105,6 +105,7 @@ class PromptEngine:
         response_model: Type[BaseModel],
         *,
         max_tokens: int = 4000,
+        feature_id: str = "",
         **variables: Any,
     ) -> BaseModel:
         """
@@ -121,7 +122,7 @@ class PromptEngine:
         from services.llm import call_llm_with_schema
 
         raw = await call_llm_with_schema(
-            system_prompt, user_prompt, schema, max_tokens=max_tokens
+            system_prompt, user_prompt, schema, max_tokens=max_tokens, feature_id=feature_id
         )
         return response_model.model_validate(raw)
 
