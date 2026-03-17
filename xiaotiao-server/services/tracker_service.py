@@ -210,7 +210,7 @@ async def search_openalex_for_topic(topic_id: str, title: str, max_results: int 
     conn.row_factory = sqlite3.Row
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 "https://api.openalex.org/works",
                 params={
@@ -281,7 +281,7 @@ async def search_semantic_scholar_for_topic(topic_id: str, title: str, max_resul
     conn.row_factory = sqlite3.Row
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 "https://api.semanticscholar.org/graph/v1/paper/search",
                 params={
@@ -337,7 +337,7 @@ async def search_crossref_for_topic(topic_id: str, title: str, max_results: int 
     conn.row_factory = sqlite3.Row
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 "https://api.crossref.org/works",
                 params={
@@ -401,7 +401,7 @@ async def search_doaj_for_topic(topic_id: str, title: str, max_results: int = 10
     conn.row_factory = sqlite3.Row
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 "https://doaj.org/api/search/articles/" + title.replace(" ", "%20"),
                 params={"pageSize": max_results, "sort": "relevance"},
@@ -468,7 +468,7 @@ async def search_core_for_topic(topic_id: str, title: str, max_results: int = 10
         if core_api_key:
             headers["Authorization"] = f"Bearer {core_api_key}"
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 "https://api.core.ac.uk/v3/search/works",
                 params={"q": title, "limit": max_results},
@@ -519,7 +519,7 @@ async def search_cnki_for_topic(topic_id: str, title: str, max_results: int = 10
     conn.row_factory = sqlite3.Row
 
     try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             resp = await client.get(
                 "https://kns.cnki.net/kns8s/brief/grid",
                 params={
@@ -586,7 +586,7 @@ async def search_ssrn_for_topic(topic_id: str, title: str, max_results: int = 10
     conn.row_factory = sqlite3.Row
 
     try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             resp = await client.get(
                 "https://api.ssrn.com/content/v1/bindings",
                 params={"term": title, "count": max_results, "sort": "Relevance"},
@@ -660,7 +660,7 @@ SOURCE_SEARCH_MAP = {
 
 
 async def search_topic_all_sources(topic_id: str, title: str, sources: List[str] = None, db_path: str = None):
-    """Search all sources in PARALLEL with progress tracking."""
+    """Search sources sequentially with real-time progress tracking."""
     if not sources:
         sources = ["arxiv"]
 
@@ -672,34 +672,43 @@ async def search_topic_all_sources(topic_id: str, title: str, sources: List[str]
     conn.execute("CREATE TABLE IF NOT EXISTS search_progress (topic_id TEXT PRIMARY KEY, total INTEGER, completed INTEGER, current_source TEXT, status TEXT, updated_at TEXT)")
     now = datetime.utcnow().isoformat()
     conn.execute("INSERT OR REPLACE INTO search_progress (topic_id, total, completed, current_source, status, updated_at) VALUES (?,?,?,?,?,?)",
-                 (topic_id, len(sources), 0, ','.join(sources), 'searching', now))
+                 (topic_id, len(sources), 0, sources[0] if sources else '', 'searching', now))
     conn.commit()
     conn.close()
 
-    completed_count = {'n': 0}  # mutable counter for closure
-
-    async def _run_source(source):
+    completed = 0
+    for source in sources:
         fn = SOURCE_SEARCH_MAP.get(source)
         if not fn:
-            return
-        try:
-            await fn(topic_id, title, db_path=db_path)
-        except Exception as e:
-            print(f"[tracker] Source {source} failed: {e}")
-        # Update progress after each source completes
-        completed_count['n'] += 1
+            completed += 1
+            continue
+
+        # Update current source BEFORE starting
         try:
             c = sqlite3.connect(target_db)
-            c.execute("UPDATE search_progress SET completed=?, current_source=?, updated_at=? WHERE topic_id=?",
-                      (completed_count['n'], source + ' ✓', datetime.utcnow().isoformat(), topic_id))
+            c.execute("UPDATE search_progress SET current_source=?, updated_at=? WHERE topic_id=?",
+                      (source, datetime.utcnow().isoformat(), topic_id))
             c.commit()
             c.close()
         except Exception:
             pass
 
-    # Run all sources in parallel
-    tasks = [_run_source(s) for s in sources]
-    await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            await fn(topic_id, title, db_path=db_path)
+            print(f"[tracker] Source {source} completed for '{title}'")
+        except Exception as e:
+            print(f"[tracker] Source {source} failed: {e}")
+
+        # Update progress AFTER source completes
+        completed += 1
+        try:
+            c = sqlite3.connect(target_db)
+            c.execute("UPDATE search_progress SET completed=?, current_source=?, updated_at=? WHERE topic_id=?",
+                      (completed, source + ' ✓', datetime.utcnow().isoformat(), topic_id))
+            c.commit()
+            c.close()
+        except Exception:
+            pass
 
     # Mark as done
     conn = sqlite3.connect(target_db)
@@ -707,3 +716,4 @@ async def search_topic_all_sources(topic_id: str, title: str, sources: List[str]
                  (len(sources), datetime.utcnow().isoformat(), topic_id))
     conn.commit()
     conn.close()
+
