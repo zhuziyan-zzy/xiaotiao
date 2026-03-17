@@ -182,3 +182,28 @@ export async function queryRag(payload) {
         top_k: payload.top_k || 5
     });
 }
+
+// ── Article History ──────────────────────────────
+export async function getArticleHistory(page = 1, size = 20) {
+    return await fetchAPIGet(`/topic/history?page=${page}&size=${size}`);
+}
+
+export async function getArticleDetail(id) {
+    return await fetchAPIGet(`/topic/history/${id}`);
+}
+
+export async function deleteArticle(id) {
+    return await requestJSON({
+        endpoint: `/topic/history/${id}`,
+        method: 'DELETE',
+        timeoutMs: TIMEOUTS.defaultPost,
+        retries: 0,
+    });
+}
+
+export async function exportArticleWord(id) {
+    const url = `${API_BASE}/topic/history/${id}/export`;
+    const resp = await authFetch(url);
+    if (!resp.ok) throw new Error('导出失败');
+    return await resp.blob();
+}

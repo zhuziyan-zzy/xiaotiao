@@ -108,7 +108,7 @@ function handleSelectionChange() {
   const anchorEl = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
   if (!anchorEl) { hideToolbar(); return; }
   if (_toolbar && _toolbar.contains(anchorEl)) return;
-  if (_conceptPanel && _conceptPanel.contains(anchorEl)) return;
+  // Allow selections inside concept panel to trigger toolbar (for recursive analysis)
   const tag = anchorEl.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || anchorEl.isContentEditable) {
     hideToolbar(); return;
@@ -297,29 +297,29 @@ async function showConceptAnalysis() {
     let contentHtml = '';
     if (data.definition_zh || data.definition_en) {
       contentHtml += `<div style="margin-bottom:10px;">`;
-      if (data.phonetic) contentHtml += `<span style="color:#94a3b8;font-size:0.85em;margin-right:8px;">${data.phonetic}</span>`;
-      if (data.part_of_speech) contentHtml += `<span style="color:#818cf8;font-size:0.82em;">${data.part_of_speech}</span>`;
+      if (data.phonetic) contentHtml += `<span style="color:#6e6e73;font-size:0.85em;margin-right:8px;">${data.phonetic}</span>`;
+      if (data.part_of_speech) contentHtml += `<span style="color:#5856d6;font-size:0.82em;">${data.part_of_speech}</span>`;
       contentHtml += `</div>`;
-      if (data.definition_zh) contentHtml += `<div style="color:#e2e8f0;font-size:0.95em;margin-bottom:6px;">📖 ${data.definition_zh}</div>`;
-      if (data.definition_en) contentHtml += `<div style="color:#94a3b8;font-size:0.88em;margin-bottom:8px;font-style:italic;">${data.definition_en}</div>`;
+      if (data.definition_zh) contentHtml += `<div style="color:#1d1d1f;font-size:0.95em;margin-bottom:6px;">📖 ${data.definition_zh}</div>`;
+      if (data.definition_en) contentHtml += `<div style="color:#6e6e73;font-size:0.88em;margin-bottom:8px;font-style:italic;">${data.definition_en}</div>`;
     }
     if (data.explanation) {
-      contentHtml += `<div style="color:#cbd5e1;font-size:0.9em;line-height:1.6;margin-bottom:10px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;">${data.explanation}</div>`;
+      contentHtml += `<div style="color:#3a3a3c;font-size:0.9em;line-height:1.6;margin-bottom:10px;padding:8px;background:rgba(88,86,214,0.04);border-radius:6px;">${data.explanation}</div>`;
     }
     if (data.examples && data.examples.length > 0) {
-      contentHtml += `<div style="margin-bottom:8px;"><div style="font-size:0.82em;color:#818cf8;margin-bottom:4px;">📝 例句</div>`;
+      contentHtml += `<div style="margin-bottom:8px;"><div style="font-size:0.82em;color:#5856d6;margin-bottom:4px;">📝 例句</div>`;
       data.examples.forEach(ex => {
-        contentHtml += `<div style="margin-bottom:6px;padding-left:8px;border-left:2px solid rgba(99,102,241,0.3);">
-          <div style="color:#e2e8f0;font-size:0.88em;">${ex.en || ''}</div>
-          <div style="color:#94a3b8;font-size:0.82em;">${ex.zh || ''}</div>
+        contentHtml += `<div style="margin-bottom:6px;padding-left:8px;border-left:2px solid rgba(88,86,214,0.25);">
+          <div style="color:#1d1d1f;font-size:0.88em;">${ex.en || ''}</div>
+          <div style="color:#6e6e73;font-size:0.82em;">${ex.zh || ''}</div>
         </div>`;
       });
       contentHtml += `</div>`;
     }
     if (data.related_terms && data.related_terms.length > 0) {
-      contentHtml += `<div style="padding-top:6px;border-top:1px solid rgba(255,255,255,0.06);">
-        <div style="font-size:0.82em;color:#818cf8;margin-bottom:4px;">🔗 相关词汇</div>
-        ${data.related_terms.map(t => `<span style="display:inline-block;background:rgba(99,102,241,0.12);padding:2px 8px;border-radius:4px;margin:2px 4px 2px 0;font-size:0.82em;color:#a5b4fc;">${t.term}: ${t.zh || ''}</span>`).join('')}
+      contentHtml += `<div style="padding-top:6px;border-top:1px solid rgba(0,0,0,0.06);">
+        <div style="font-size:0.82em;color:#5856d6;margin-bottom:4px;">🔗 相关词汇 <span style="font-size:0.9em;color:#6e6e73;">(点击词汇可解析)</span></div>
+        ${data.related_terms.map(t => `<span class="concept-related-word" data-word="${(t.term || '').replace(/"/g, '&quot;')}" style="display:inline-flex;align-items:center;gap:4px;background:rgba(88,86,214,0.08);padding:3px 10px;border-radius:6px;margin:2px 4px 2px 0;font-size:0.82em;color:#5856d6;cursor:pointer;transition:background 120ms ease;"><span class="concept-related-word__text" style="border-bottom:1px dashed rgba(88,86,214,0.3);">${t.term}</span><span style="color:#6e6e73;">${t.zh ? ': ' + t.zh : ''}</span><button class="concept-related-vocab-btn" data-word="${(t.term || '').replace(/"/g, '&quot;')}" title="加入生词本" style="background:none;border:none;cursor:pointer;font-size:13px;padding:0 2px;line-height:1;opacity:0.6;transition:opacity 100ms;">+</button></span>`).join('')}
       </div>`;
     }
     // Fallback for old-format responses
@@ -338,6 +338,7 @@ async function showConceptAnalysis() {
         + 同时加入生词本
       </button>
     `;
+    // "Add to vocab" button for the main word
     const addBtn = body.querySelector('.concept-analysis-panel__add-vocab');
     if (addBtn) {
       addBtn.addEventListener('click', async () => {
@@ -359,6 +360,38 @@ async function showConceptAnalysis() {
         }
       });
     }
+
+    // Click related term → recursive concept analysis
+    body.querySelectorAll('.concept-related-word__text').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const termWord = el.closest('.concept-related-word')?.dataset.word;
+        if (termWord) {
+          _currentWord = termWord.toLowerCase();
+          _currentWarning = '';
+          showConceptAnalysis();
+        }
+      });
+    });
+
+    // Click "+" on related term → add to vocab
+    body.querySelectorAll('.concept-related-vocab-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const termWord = btn.dataset.word;
+        if (!termWord) return;
+        btn.textContent = '⏳';
+        btn.disabled = true;
+        try {
+          const result = await createVocabItem({ word: termWord.toLowerCase(), domain: 'general', source: 'concept_analysis' });
+          btn.textContent = result?.duplicate ? '⚠' : '✓';
+          window.showToast(result?.duplicate ? `已加入易忘：${termWord}` : `已加入：${termWord}`, result?.duplicate ? 'warning' : 'success');
+        } catch (err) {
+          btn.textContent = '✗';
+          window.showToast(`加入失败`, 'error');
+        }
+      });
+    });
   } catch (err) {
     clearInterval(progressInterval);
     body.innerHTML = `

@@ -4,7 +4,11 @@ import {
   createVocabItem,
   generateTopic,
   runTranslation,
-  fetchAPI
+  fetchAPI,
+  getArticleHistory,
+  getArticleDetail,
+  deleteArticle,
+  exportArticleWord
 } from './api.js';
 import { escapeHtml, sanitizeHtml } from './utils/sanitize.js';
 
@@ -324,24 +328,58 @@ export function renderTopicExplorer() {
         </div>
       </div>
 
-      <div class="module-page">
-        <div class="module-page__layout module-page__layout--single">
-          <div class="panel panel--topic-result">
-            <div class="panel__header">
-              <div class="panel__title">
-                <span class="panel__title-icon" style="background:var(--topic)"></span>
-                学习内容
+      <!-- Tab Switcher -->
+      <div class="topic-tabs" style="display:flex;gap:4px;margin-bottom:16px;background:var(--glass-bg);border:var(--glass-border);border-radius:var(--r-pill);padding:4px;width:fit-content;">
+        <button class="topic-tab is-active" id="tab-generate" style="padding:8px 20px;border:none;border-radius:var(--r-pill);font-size:13px;font-weight:600;cursor:pointer;transition:all 150ms ease;background:var(--grad-topic);color:#fff;">📝 生成结果</button>
+        <button class="topic-tab" id="tab-history" style="padding:8px 20px;border:none;border-radius:var(--r-pill);font-size:13px;font-weight:600;cursor:pointer;transition:all 150ms ease;background:transparent;color:var(--text-secondary);">📚 历史文章</button>
+      </div>
+
+      <!-- Generate Result Panel -->
+      <div id="topic-generate-panel">
+        <div class="module-page">
+          <div class="module-page__layout module-page__layout--single">
+            <div class="panel panel--topic-result">
+              <div class="panel__header">
+                <div class="panel__title">
+                  <span class="panel__title-icon" style="background:var(--topic)"></span>
+                  学习内容
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="font-size:12px;color:var(--text-muted)" id="topic-confidence"></span>
+                </div>
               </div>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:12px;color:var(--text-muted)" id="topic-confidence"></span>
+              <div class="panel__body">
+                <div id="topic-result">
+                  <div class="result-empty">
+                    <div class="result-empty__icon">🔍</div>
+                    <div class="result-empty__text">
+                      输入主题关键词并点击生成，<br>AI 将为你创建专属学习材料
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="panel__body">
-              <div id="topic-result">
-                <div class="result-empty">
-                  <div class="result-empty__icon">🔍</div>
-                  <div class="result-empty__text">
-                    输入主题关键词并点击生成，<br>AI 将为你创建专属学习材料
+          </div>
+        </div>
+      </div>
+
+      <!-- History Panel -->
+      <div id="topic-history-panel" style="display:none;">
+        <div class="module-page">
+          <div class="module-page__layout module-page__layout--single">
+            <div class="panel">
+              <div class="panel__header">
+                <div class="panel__title">
+                  <span class="panel__title-icon" style="background:var(--topic)"></span>
+                  历史文章
+                </div>
+                <button class="btn btn--sm btn--ghost" id="btn-refresh-history">🔄 刷新</button>
+              </div>
+              <div class="panel__body">
+                <div id="history-list">
+                  <div class="result-empty">
+                    <div class="result-empty__icon">📚</div>
+                    <div class="result-empty__text">加载中...</div>
                   </div>
                 </div>
               </div>
@@ -698,6 +736,215 @@ export function initTopicExplorer() {
 
   // FIX 4: Config starts minimized, FAB is visible by default
   updateSummaryBar();
+
+  // ══════════════════════════════════════════════
+  // HISTORY TAB LOGIC
+  // ══════════════════════════════════════════════
+  const tabGenerate = document.getElementById('tab-generate');
+  const tabHistory = document.getElementById('tab-history');
+  const generatePanel = document.getElementById('topic-generate-panel');
+  const historyPanel = document.getElementById('topic-history-panel');
+  const historyList = document.getElementById('history-list');
+  const refreshHistoryBtn = document.getElementById('btn-refresh-history');
+
+  const LEVEL_MAP = { beginner: '初级', intermediate: '中级', advanced: '高级' };
+  const STYLE_MAP = { economist: '经济学人', guardian: '卫报', ft: '金融时报', academic: '学术期刊', plain_english: '简明日常' };
+
+  const switchTab = (tab) => {
+    if (tab === 'generate') {
+      tabGenerate.style.background = 'var(--grad-topic)';
+      tabGenerate.style.color = '#fff';
+      tabGenerate.classList.add('is-active');
+      tabHistory.style.background = 'transparent';
+      tabHistory.style.color = 'var(--text-secondary)';
+      tabHistory.classList.remove('is-active');
+      generatePanel.style.display = '';
+      historyPanel.style.display = 'none';
+    } else {
+      tabHistory.style.background = 'var(--grad-topic)';
+      tabHistory.style.color = '#fff';
+      tabHistory.classList.add('is-active');
+      tabGenerate.style.background = 'transparent';
+      tabGenerate.style.color = 'var(--text-secondary)';
+      tabGenerate.classList.remove('is-active');
+      generatePanel.style.display = 'none';
+      historyPanel.style.display = '';
+      loadHistory();
+    }
+  };
+
+  tabGenerate.addEventListener('click', () => switchTab('generate'));
+  tabHistory.addEventListener('click', () => switchTab('history'));
+  if (refreshHistoryBtn) refreshHistoryBtn.addEventListener('click', () => loadHistory());
+
+  let historyPage = 1;
+
+  async function loadHistory(page = 1) {
+    historyPage = page;
+    historyList.innerHTML = `<div class="result-empty"><div class="loading-dots"><span></span><span></span><span></span></div><div class="loading-text">加载历史文章...</div></div>`;
+    try {
+      const data = await getArticleHistory(page, 10);
+      if (!data.items || data.items.length === 0) {
+        historyList.innerHTML = `<div class="result-empty"><div class="result-empty__icon">📚</div><div class="result-empty__text">暂无历史文章<br>生成一篇文章后会自动保存在这里</div></div>`;
+        return;
+      }
+      let html = '<div class="history-cards">';
+      for (const item of data.items) {
+        const date = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const domains = (item.domains || []).join(', ');
+        const preview = (item.preview || '').replace(/<[^>]+>/g, '').substring(0, 120);
+        html += `
+          <div class="history-card" data-id="${escapeHtml(item.id)}">
+            <div class="history-card__header">
+              <div class="history-card__topic">${escapeHtml(item.topic)}</div>
+              <div class="history-card__date">${date}</div>
+            </div>
+            <div class="history-card__meta">
+              <span class="history-card__tag">${LEVEL_MAP[item.level] || item.level}</span>
+              <span class="history-card__tag">${STYLE_MAP[item.style] || item.style}</span>
+              <span class="history-card__tag">${item.article_length || '?'} 词</span>
+              ${domains ? `<span class="history-card__tag">${escapeHtml(domains)}</span>` : ''}
+            </div>
+            <div class="history-card__preview">${escapeHtml(preview)}...</div>
+            <div class="history-card__actions">
+              <button class="btn btn--sm btn--topic history-view-btn" data-id="${item.id}">📖 查看全文</button>
+              <button class="btn btn--sm btn--ghost history-export-btn" data-id="${item.id}">📥 下载 Word</button>
+              <button class="btn btn--sm btn--ghost history-delete-btn" data-id="${item.id}" style="color:#ef4444;">🗑️ 删除</button>
+            </div>
+            <div class="history-card__detail" id="detail-${item.id}" style="display:none;"></div>
+          </div>
+        `;
+      }
+      html += '</div>';
+
+      // Pagination
+      const totalPages = Math.ceil(data.total / data.size);
+      if (totalPages > 1) {
+        html += `<div style="display:flex;justify-content:center;gap:8px;margin-top:16px;">`;
+        for (let p = 1; p <= totalPages; p++) {
+          html += `<button class="btn btn--sm ${p === page ? 'btn--topic' : 'btn--ghost'}" onclick="window.__loadHistory(${p})">${p}</button>`;
+        }
+        html += '</div>';
+      }
+
+      historyList.innerHTML = html;
+
+      // Bind actions
+      historyList.querySelectorAll('.history-view-btn').forEach(btn => {
+        btn.addEventListener('click', () => viewArticleDetail(btn.dataset.id));
+      });
+      historyList.querySelectorAll('.history-export-btn').forEach(btn => {
+        btn.addEventListener('click', () => downloadArticleWord(btn.dataset.id, btn));
+      });
+      historyList.querySelectorAll('.history-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteArticleItem(btn.dataset.id));
+      });
+    } catch (err) {
+      historyList.innerHTML = `<div class="result-empty"><div class="result-empty__icon">❌</div><div class="result-empty__text">加载失败：${err.message}</div></div>`;
+    }
+  }
+
+  window.__loadHistory = loadHistory;
+
+  async function viewArticleDetail(id) {
+    const detailEl = document.getElementById(`detail-${id}`);
+    if (!detailEl) return;
+    if (detailEl.style.display !== 'none') {
+      detailEl.style.display = 'none';
+      return;
+    }
+    detailEl.innerHTML = `<div style="text-align:center;padding:20px;"><div class="loading-dots"><span></span><span></span><span></span></div></div>`;
+    detailEl.style.display = 'block';
+    try {
+      const data = await getArticleDetail(id);
+      const newWordsHtml = (data.new_words && data.new_words.length) ? `
+        <div class="gen-article__section">
+          <div class="gen-article__section-title">🆕 新词 (${data.new_words.length})</div>
+          <div class="terms-grid">
+            ${data.new_words.map(w => `
+              <div class="term-card" onclick="this.classList.toggle('expanded')">
+                <div class="term-card__en">${escapeHtml(w.word)}</div>
+                <div class="term-card__zh">${escapeHtml(w.definition_zh)}</div>
+                <div class="term-card__example"><strong>Example:</strong> ${escapeHtml(w.in_sentence)}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : '';
+
+      detailEl.innerHTML = `
+        <div class="gen-article" style="margin-top:16px;border-top:1px solid rgba(0,0,0,0.06);padding-top:16px;">
+          <div class="gen-article__section">
+            <div class="gen-article__section-title">📄 英文学习文章</div>
+            <div class="gen-article__text">${sanitizeHtml(data.result_text)}</div>
+          </div>
+          ${data.translation_text ? `
+          <div class="gen-article__section">
+            <div class="gen-article__section-title">🀄 逐段中文翻译</div>
+            <div class="gen-article__translation" style="background:rgba(255,255,255,0.03);border-radius:8px;padding:16px;margin-top:8px;line-height:1.8;color:#94a3b8;font-size:0.95em;">
+              ${sanitizeHtml(data.translation_text)}
+            </div>
+          </div>
+          ` : ''}
+          <div class="gen-article__section">
+            <div class="gen-article__section-title">📚 关键术语 (${data.terms.length})</div>
+            <div class="terms-grid">
+              ${data.terms.map(t => `
+                <div class="term-card" onclick="this.classList.toggle('expanded')">
+                  <div class="term-card__en">${escapeHtml(t.term)}</div>
+                  <div class="term-card__zh">${escapeHtml(t.zh)}</div>
+                  <div class="term-card__example"><strong>Example:</strong> ${escapeHtml(t.example)}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ${newWordsHtml}
+          ${data.notes && data.notes.length ? `
+          <div class="notes-section">
+            <div class="notes-section__title">💡 核心概念说明</div>
+            ${data.notes.map(n => `<div class="notes-section__item">${escapeHtml(n)}</div>`).join('')}
+          </div>
+          ` : ''}
+        </div>
+      `;
+    } catch (err) {
+      detailEl.innerHTML = `<div style="color:#ef4444;padding:12px;">加载失败：${err.message}</div>`;
+    }
+  }
+
+  async function downloadArticleWord(id, btn) {
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ 导出中...';
+    try {
+      const blob = await exportArticleWord(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `article_${id.substring(0, 8)}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      btn.textContent = '✅ 已下载';
+      setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+    } catch (err) {
+      btn.textContent = '❌ 失败';
+      setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+      if (typeof showToast === 'function') showToast('导出失败：' + err.message, 'error');
+    }
+  }
+
+  async function deleteArticleItem(id) {
+    if (!confirm('确定删除这篇历史文章？')) return;
+    try {
+      await deleteArticle(id);
+      if (typeof showToast === 'function') showToast('已删除', 'success');
+      loadHistory(historyPage);
+    } catch (err) {
+      if (typeof showToast === 'function') showToast('删除失败：' + err.message, 'error');
+    }
+  }
 }
 
 // Global handoff function
