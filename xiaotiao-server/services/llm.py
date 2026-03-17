@@ -597,34 +597,36 @@ async def call_claude_stream(system_prompt: str, user_prompt: str, max_tokens: i
     """Yield text chunks from the LLM as a generator (for StreamingResponse)."""
     provider = _llm_provider()
 
-    if provider == "gemini":
-        async for text in _call_gemini_stream(system_prompt, user_prompt, max_tokens=max_tokens):
-            yield text
-    elif provider == "openai":
-        async for text in _call_openai_stream(system_prompt, user_prompt, max_tokens=max_tokens):
-            yield text
-    elif provider == "anthropic" and anthropic_client:
-        async with anthropic_client.messages.stream(
-            model=_env("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219"),
-            max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-            temperature=0.7,
-        ) as stream:
-            async for text in stream.text_stream:
+    if provider == "mock":
+        raise RuntimeError("AI 服务未配置：当前为 Mock 模式，请在管理后台配置真实的 API Key。")
+
+    try:
+        if provider == "gemini":
+            async for text in _call_gemini_stream(system_prompt, user_prompt, max_tokens=max_tokens):
                 yield text
-    elif provider == "qwen":
-        # Qwen doesn't support native streaming in our setup, so call sync and yield at once
-        result = await _call_qwen_json(system_prompt, user_prompt, max_tokens)
-        text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-        yield text
-    else:
-        # Mock streaming
-        import asyncio as _asyncio
-        mock_text = "这是一段 AI 生成的模拟响应文本。在生产环境中，这里会是来自大语言模型的真实分析内容。"
-        for char in mock_text:
-            yield char
-            await _asyncio.sleep(0.02)
+        elif provider == "openai":
+            async for text in _call_openai_stream(system_prompt, user_prompt, max_tokens=max_tokens):
+                yield text
+        elif provider == "anthropic" and anthropic_client:
+            async with anthropic_client.messages.stream(
+                model=_env("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219"),
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+                temperature=0.7,
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield text
+        elif provider == "qwen":
+            result = await _call_qwen_json(system_prompt, user_prompt, max_tokens)
+            text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+            yield text
+        else:
+            raise RuntimeError(f"AI 服务配置错误：不支持的 Provider '{provider}'，请检查管理后台配置。")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"AI 调用失败 ({provider}): {exc}") from exc
 
 # ──────────────────────────────────────────────
 #  Schema-aware LLM calls — used by PromptEngine
@@ -873,13 +875,12 @@ async def call_llm_with_schema(
             return await _call_qwen_json(system_prompt, user_prompt, max_tokens=max_tokens)
         if provider == "anthropic":
             return await _call_anthropic_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        print("Using LLM JSON MOCK (No provider key)")
-        return await mock_claude_json(system_prompt, user_prompt)
+        raise RuntimeError("AI 服务未配置：当前为 Mock 模式，请在管理后台配置真实的 API Key。")
     except Exception as exc:
-        if _env("LLM_FALLBACK_TO_MOCK", "true").lower() in {"1", "true", "yes"}:
+        if _env("LLM_FALLBACK_TO_MOCK", "false").lower() in {"1", "true", "yes"}:
             print(f"LLM schema call failed ({provider}), fallback to mock: {exc}")
             return await mock_claude_json(system_prompt, user_prompt)
-        raise RuntimeError(f"Failed to generate valid response from {provider}: {exc}") from exc
+        raise RuntimeError(f"AI 调用失败 ({provider}): {exc}") from exc
 
 
 async def call_claude_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> dict:
@@ -893,13 +894,12 @@ async def call_claude_json(system_prompt: str, user_prompt: str, max_tokens: int
             return await _call_qwen_json(system_prompt, user_prompt, max_tokens=max_tokens)
         if provider == "anthropic":
             return await _call_anthropic_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        print("Using LLM JSON MOCK (No provider key)")
-        return await mock_claude_json(system_prompt, user_prompt)
+        raise RuntimeError("AI 服务未配置：当前为 Mock 模式，请在管理后台配置真实的 API Key。")
     except Exception as exc:
-        if _env("LLM_FALLBACK_TO_MOCK", "true").lower() in {"1", "true", "yes"}:
+        if _env("LLM_FALLBACK_TO_MOCK", "false").lower() in {"1", "true", "yes"}:
             print(f"LLM call failed ({provider}), fallback to mock: {exc}")
             return await mock_claude_json(system_prompt, user_prompt)
-        raise RuntimeError(f"Failed to generate valid response from {provider}: {exc}") from exc
+        raise RuntimeError(f"AI 调用失败 ({provider}): {exc}") from exc
 
 
 async def call_claude_vision_json(
@@ -919,10 +919,9 @@ async def call_claude_vision_json(
             )
         if provider == "openai":
             raise RuntimeError("OpenAI vision is not configured for this project.")
-        print("Using LLM Vision JSON MOCK (No provider key)")
-        return await mock_claude_json(system_prompt, user_prompt)
+        raise RuntimeError("AI 服务未配置：当前为 Mock 模式，请在管理后台配置真实的 API Key。")
     except Exception as exc:
-        if _env("LLM_FALLBACK_TO_MOCK", "true").lower() in {"1", "true", "yes"}:
+        if _env("LLM_FALLBACK_TO_MOCK", "false").lower() in {"1", "true", "yes"}:
             print(f"LLM vision call failed ({provider}), fallback to mock: {exc}")
             return await mock_claude_json(system_prompt, user_prompt)
-        raise RuntimeError(f"Failed to generate valid vision response from {provider}: {exc}") from exc
+        raise RuntimeError(f"AI 视觉调用失败 ({provider}): {exc}") from exc

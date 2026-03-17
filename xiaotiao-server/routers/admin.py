@@ -42,6 +42,13 @@ AI_FEATURES = [
         "call_type": "JSON",
         "description": "根据用户选择的主题和词汇，AI 生成包含指定单词的教学文章",
         "variables": ["topics", "domains", "level", "article_length", "db_words", "new_word_count", "style_modifier", "rag_context"],
+        "pipeline": [
+            {"step": "request", "label": "前端请求", "test": "route"},
+            {"step": "template", "label": "模板渲染", "test": "template", "file": "topic_generate.j2"},
+            {"step": "llm", "label": "AI 生成", "test": "llm_json"},
+            {"step": "parse", "label": "JSON 解析", "test": "auto"},
+            {"step": "response", "label": "返回前端", "test": "auto"},
+        ],
     },
     {
         "id": "article_analyze",
@@ -54,6 +61,13 @@ AI_FEATURES = [
         "call_type": "JSON",
         "description": "AI 逐段解读英文文章，提供中文翻译、术语提取、关键句分析",
         "variables": ["source_text", "analysis_mode", "grounded_context"],
+        "pipeline": [
+            {"step": "request", "label": "前端请求", "test": "route"},
+            {"step": "template", "label": "模板渲染", "test": "template", "file": "article_analyze.j2"},
+            {"step": "llm", "label": "AI 解读", "test": "llm_json"},
+            {"step": "parse", "label": "JSON 解析", "test": "auto"},
+            {"step": "response", "label": "返回前端", "test": "auto"},
+        ],
     },
     {
         "id": "translation",
@@ -66,6 +80,13 @@ AI_FEATURES = [
         "call_type": "JSON",
         "description": "AI 提供直译/法律/简明三种翻译风格，并对用户自译进行点评",
         "variables": ["source_text", "direction", "user_translation"],
+        "pipeline": [
+            {"step": "request", "label": "前端请求", "test": "route"},
+            {"step": "template", "label": "模板渲染", "test": "template", "file": "translation.j2"},
+            {"step": "llm", "label": "AI 翻译", "test": "llm_json"},
+            {"step": "parse", "label": "JSON 解析", "test": "auto"},
+            {"step": "response", "label": "返回前端", "test": "auto"},
+        ],
     },
     {
         "id": "multimodal",
@@ -78,6 +99,13 @@ AI_FEATURES = [
         "call_type": "Vision + JSON",
         "description": "从图片、PDF、文档中 AI 识别并提取专业领域词汇",
         "variables": ["domain", "extracted_text"],
+        "pipeline": [
+            {"step": "request", "label": "前端请求", "test": "route"},
+            {"step": "ocr", "label": "文件处理", "test": "route"},
+            {"step": "template", "label": "模板渲染", "test": "template", "file": "multimodal.j2"},
+            {"step": "llm", "label": "AI 提取", "test": "llm_json"},
+            {"step": "response", "label": "返回前端", "test": "auto"},
+        ],
     },
     {
         "id": "paper_ai",
@@ -90,6 +118,13 @@ AI_FEATURES = [
         "call_type": "Stream",
         "description": "AI 流式分析论文内容，支持对话问答、段落翻译、术语提取、摘要生成",
         "variables": [],
+        "pipeline": [
+            {"step": "request", "label": "前端请求", "test": "route"},
+            {"step": "prompt", "label": "构建 Prompt", "test": "route"},
+            {"step": "llm", "label": "AI 流式生成", "test": "llm_stream"},
+            {"step": "stream", "label": "SSE 推流", "test": "auto"},
+            {"step": "response", "label": "前端渲染", "test": "auto"},
+        ],
     },
     {
         "id": "vocab_import",
@@ -102,6 +137,13 @@ AI_FEATURES = [
         "call_type": "JSON + Vision",
         "description": "AI 从文本或图片中批量提取单词并自动添加到生词本",
         "variables": [],
+        "pipeline": [
+            {"step": "request", "label": "前端请求", "test": "route"},
+            {"step": "process", "label": "文本/图片处理", "test": "route"},
+            {"step": "llm", "label": "AI 提取", "test": "llm_json"},
+            {"step": "save", "label": "写入数据库", "test": "auto"},
+            {"step": "response", "label": "返回前端", "test": "auto"},
+        ],
     },
 ]
 
@@ -179,9 +221,14 @@ a:hover{text-decoration:underline}
 .fc-status.active{background:#4ade80;box-shadow:0 0 8px rgba(74,222,128,.5)}
 .fc-status.mock{background:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.4)}
 .fc-status.error{background:#f87171;box-shadow:0 0 8px rgba(248,113,113,.4)}
+.fc-status.untested{background:#64748b;box-shadow:0 0 6px rgba(100,116,139,.3)}
 .fc-frontend{display:flex;align-items:center;gap:6px;font-size:.82rem;color:#94a3b8;margin-bottom:8px;padding:6px 10px;background:rgba(99,102,241,.08);border-radius:8px}
 .fc-frontend .arrow{color:#6366f1;font-size:.75rem}
-.fc-desc{font-size:.8rem;color:#64748b;margin-bottom:12px;line-height:1.5}
+.fc-desc{font-size:.8rem;color:#64748b;margin-bottom:8px;line-height:1.5}
+.fc-error{font-size:.75rem;color:#f87171;margin-bottom:8px;padding:6px 10px;background:rgba(248,113,113,.06);border-radius:6px;word-break:break-all}
+.fc-ok{font-size:.75rem;color:#4ade80;margin-bottom:8px}
+.fc-untested{font-size:.75rem;color:#64748b;margin-bottom:8px;font-style:italic}
+.fc-latency{font-size:.7rem;color:#475569;margin-top:4px}
 .fc-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .fc-tag{font-size:.72rem;padding:3px 10px;border-radius:6px;font-weight:500}
 .fc-tag.call{background:rgba(99,102,241,.12);color:#818cf8}
@@ -239,6 +286,18 @@ a:hover{text-decoration:underline}
 
 @keyframes spin{to{transform:rotate(360deg)}}
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+
+/* Pipeline flow */
+.pipeline{display:flex;align-items:center;gap:0;margin:12px 0 8px;padding:8px 0;overflow-x:auto}
+.pipe-step{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:60px;flex-shrink:0;position:relative}
+.pipe-dot{width:14px;height:14px;border-radius:50%;border:2px solid rgba(148,163,184,.2);background:#1e293b;transition:all .4s}
+.pipe-dot.active{background:#4ade80;border-color:#4ade80;box-shadow:0 0 8px rgba(74,222,128,.5)}
+.pipe-dot.error{background:#f87171;border-color:#f87171;box-shadow:0 0 8px rgba(248,113,113,.5)}
+.pipe-dot.testing{background:#fbbf24;border-color:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.4);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.pipe-label{font-size:.65rem;color:#64748b;text-align:center;max-width:70px;line-height:1.2}
+.pipe-arrow{color:#334155;font-size:.7rem;margin:0 2px;flex-shrink:0;align-self:flex-start;margin-top:3px}
+.pipe-err-msg{font-size:.68rem;color:#f87171;margin-top:4px;max-width:100%;word-break:break-all;text-align:center;padding:4px 8px;background:rgba(248,113,113,.06);border-radius:4px}
 """
 
 
@@ -288,21 +347,26 @@ def _get_provider_info():
 
 
 def _feature_status():
-    """Determine each AI feature's status."""
-    provider, api_status = _get_provider_info()
+    """Return each AI feature's status from last real test, or 'untested'."""
     statuses = {}
     for f in AI_FEATURES:
-        if api_status == "active":
-            # Vision features need specific provider support
-            if "Vision" in f["call_type"] and provider in ("openai",):
-                statuses[f["id"]] = "mock"
-            else:
-                statuses[f["id"]] = "active"
-        elif api_status == "mock":
-            statuses[f["id"]] = "mock"
+        result = _last_test_results.get(f["id"])
+        if result:
+            statuses[f["id"]] = result
         else:
-            statuses[f["id"]] = "error"
+            # Not yet tested — show as untested
+            provider, _ = _get_provider_info()
+            statuses[f["id"]] = {
+                "status": "untested",
+                "message": "未测试 — 点击「逐项测试」查看真实状态",
+                "tested_at": None,
+                "latency_ms": None,
+            }
     return statuses
+
+
+# In-memory store of real test results
+_last_test_results: dict[str, dict] = {}
 
 
 # Template → Feature mapping
@@ -400,15 +464,19 @@ def admin_dashboard(request: Request):
 
     # ── Feature status ──
     statuses = _feature_status()
+    active_count = sum(1 for s in statuses.values() if isinstance(s, dict) and s.get('status') == 'active')
+    error_count = sum(1 for s in statuses.values() if isinstance(s, dict) and s.get('status') == 'error')
+    untested_count = sum(1 for s in statuses.values() if isinstance(s, dict) and s.get('status') == 'untested')
 
-    # ── Build feature cards ──
+    # ── Build feature cards with pipeline ──
     feature_cards = ""
     for f in AI_FEATURES:
-        st = statuses.get(f["id"], "error")
+        st_info = statuses.get(f["id"], {"status": "untested"})
+        st = st_info.get("status", "untested") if isinstance(st_info, dict) else "untested"
         card_class = "type-json"
-        if "Stream" in f["call_type"]:
+        if "Stream" in (f.get("call_type") or ""):
             card_class = "type-stream"
-        elif "Vision" in f["call_type"]:
+        elif "Vision" in (f.get("call_type") or ""):
             card_class = "type-vision"
 
         tpl_tag = ""
@@ -417,21 +485,52 @@ def admin_dashboard(request: Request):
         else:
             tpl_tag = '<span class="fc-tag inline">⚡ 内联 prompt</span>'
 
+        # Build pipeline HTML
+        pipeline_html = ""
+        step_results = st_info.get("steps", {}) if isinstance(st_info, dict) else {}
+        for i, ps in enumerate(f.get("pipeline", [])):
+            step_st = step_results.get(ps["step"], "untested")
+            dot_class = ""
+            if isinstance(step_st, dict):
+                dot_class = "active" if step_st.get("ok") else "error"
+            elif step_st == "active":
+                dot_class = "active"
+            elif step_st == "error":
+                dot_class = "error"
+            # Arrow before each step (except first)
+            if i > 0:
+                pipeline_html += '<span class="pipe-arrow">→</span>'
+            pipeline_html += f'<div class="pipe-step"><div class="pipe-dot {dot_class}" id="dot-{f["id"]}-{ps["step"]}"></div><div class="pipe-label">{ps["label"]}</div></div>'
+
+        # Error message if any
+        err_html = ""
+        if st == "error" and isinstance(st_info, dict):
+            msg = html_mod.escape(str(st_info.get("message", ""))[:200])
+            err_html = f'<div class="pipe-err-msg" id="err-{f["id"]}">❌ {msg}</div>'
+        elif st == "untested":
+            err_html = f'<div class="pipe-err-msg" id="err-{f["id"]}" style="color:#64748b;background:transparent">⚪ 未测试 — 点击「逐项测试」查看真实状态</div>'
+        elif st == "active":
+            latency = st_info.get("latency_ms", "") if isinstance(st_info, dict) else ""
+            err_html = f'<div class="pipe-err-msg" id="err-{f["id"]}" style="color:#4ade80;background:transparent">✅ 全部步骤正常{" · " + str(latency) + "ms" if latency else ""}</div>'
+
         feature_cards += f"""
-        <div class="feature-card {card_class}">
+        <div class="feature-card {card_class}" id="fc-{f['id']}">
             <div class="fc-header">
                 <div class="fc-title">
                     <span class="icon">{f["icon"]}</span>
                     <span class="name">{f["name"]}</span>
                 </div>
-                <div class="fc-status {st}" title="{'正常运行' if st == 'active' else ('模拟模式' if st == 'mock' else '不可用')}"></div>
+                <div class="fc-status {st}" id="dot-{f['id']}"></div>
             </div>
             <div class="fc-frontend">
                 <span>🖥️ {f["frontend"]}</span>
                 <span class="arrow">→</span>
                 <span>{f["frontend_action"]}</span>
             </div>
-            <div class="fc-desc">{f["description"]}</div>
+            <div class="pipeline" id="pipeline-{f['id']}">
+                {pipeline_html}
+            </div>
+            {err_html}
             <div class="fc-meta">
                 <span class="fc-tag call">⚡ {f["call_type"]}</span>
                 {tpl_tag}
@@ -521,14 +620,17 @@ def admin_dashboard(request: Request):
             <div class="stat-card">
                 <div class="stat-label">AI 功能</div>
                 <div class="stat-value">{len(AI_FEATURES)}</div>
-                <div class="stat-sub ok">{sum(1 for s in statuses.values() if s == 'active')} 正常运行</div>
+                <div class="stat-sub">{f'<span class="ok">{active_count} 正常</span>' if active_count else ''}{f' <span class="err">{error_count} 异常</span>' if error_count else ''}{f' <span style="color:#64748b">{untested_count} 未测试</span>' if untested_count else ''}</div>
             </div>
         </div>
 
         <!-- Panel 1: AI Feature Map -->
         <div class="section">
             <h2>🗺️ AI 功能地图</h2>
-            <div class="subtitle">可视化展示每个 AI 功能连接的前端模块、提示词模板和调用方式。绿灯=正常，黄灯=模拟，红灯=不可用。</div>
+            <div class="subtitle">
+                可视化展示每个 AI 功能的真实运行状态。绿灯=正常，红灯=异常，灰灯=未测试。
+                <button class="test-btn" style="display:inline-flex;padding:6px 16px;font-size:.8rem;margin-left:12px;vertical-align:middle" id="btn-test-all" onclick="testAllFeatures()">🧪 逐项测试全部功能</button>
+            </div>
             <div class="feature-grid">
                 {feature_cards}
             </div>
@@ -635,6 +737,55 @@ def admin_dashboard(request: Request):
         btn.disabled = false;
         btn.innerHTML = '🔍 测试连接';
     }}
+
+    async function testAllFeatures() {{
+        const btn = document.getElementById('btn-test-all');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> 正在逐项测试...';
+
+        try {{
+            const resp = await fetch('/admin/api/test-all-features', {{
+                method: 'POST',
+                credentials: 'include'
+            }});
+            const data = await resp.json();
+            if (data.results) {{
+                for (const [fid, result] of Object.entries(data.results)) {{
+                    // Update main status dot
+                    const mainDot = document.getElementById('dot-' + fid);
+                    if (mainDot) {{
+                        mainDot.className = 'fc-status ' + result.status;
+                    }}
+                    // Update pipeline step dots
+                    if (result.steps) {{
+                        for (const [stepId, stepResult] of Object.entries(result.steps)) {{
+                            const dot = document.getElementById('dot-' + fid + '-' + stepId);
+                            if (dot) {{
+                                dot.className = 'pipe-dot ' + (stepResult.ok ? 'active' : 'error');
+                            }}
+                        }}
+                    }}
+                    // Update error message
+                    const errEl = document.getElementById('err-' + fid);
+                    if (errEl) {{
+                        if (result.status === 'active') {{
+                            errEl.style.color = '#4ade80';
+                            errEl.style.background = 'transparent';
+                            errEl.innerHTML = '✅ 全部步骤正常' + (result.latency_ms ? ' · ' + result.latency_ms + 'ms' : '');
+                        }} else if (result.status === 'error') {{
+                            errEl.style.color = '#f87171';
+                            errEl.style.background = 'rgba(248,113,113,.06)';
+                            errEl.innerHTML = '❌ ' + (result.message || '未知错误');
+                        }}
+                    }}
+                }}
+            }}
+        }} catch(e) {{
+            console.error('Test failed:', e);
+        }}
+        btn.disabled = false;
+        btn.innerHTML = '🧪 逐项测试全部功能';
+    }}
     </script>
     """
     return HTMLResponse(_page("AI 操控中心", body))
@@ -682,6 +833,99 @@ async def test_connection(request: Request):
             "latency_ms": latency,
             "error": str(exc)[:300],
         })
+
+
+@router.post("/api/test-all-features", include_in_schema=False)
+async def test_all_features(request: Request):
+    """Test each AI feature's pipeline steps and return real status."""
+    if not _check_session(request):
+        return JSONResponse({"ok": False, "error": "未登录"}, status_code=401)
+
+    from services.llm import _llm_provider
+
+    provider = _llm_provider()
+    results = {}
+
+    for f in AI_FEATURES:
+        fid = f["id"]
+        steps = {}
+        overall_ok = True
+        error_msg = ""
+        start = time.time()
+
+        # Step 1: Route check (server is running → always OK)
+        for ps in f.get("pipeline", []):
+            if ps["test"] == "route":
+                steps[ps["step"]] = {"ok": True}
+
+        # Step 2: Template check
+        for ps in f.get("pipeline", []):
+            if ps["test"] == "template":
+                tpl_file = ps.get("file", "")
+                tpl_path = PROMPTS_DIR / tpl_file
+                if tpl_path.exists():
+                    try:
+                        tpl_path.read_text(encoding="utf-8")
+                        steps[ps["step"]] = {"ok": True}
+                    except Exception as e:
+                        steps[ps["step"]] = {"ok": False, "error": str(e)}
+                        overall_ok = False
+                        error_msg = f"模板文件读取失败: {e}"
+                else:
+                    steps[ps["step"]] = {"ok": False, "error": "文件不存在"}
+                    overall_ok = False
+                    error_msg = f"模板文件不存在: {tpl_file}"
+
+        # Step 3: LLM call test
+        if overall_ok:
+            for ps in f.get("pipeline", []):
+                if ps["test"] in ("llm_json", "llm_stream"):
+                    if provider == "mock":
+                        steps[ps["step"]] = {"ok": False, "error": "Mock 模式"}
+                        overall_ok = False
+                        error_msg = "AI 服务为 Mock 模式，未配置真实 API Key"
+                    else:
+                        try:
+                            if ps["test"] == "llm_json":
+                                from services.llm import call_claude_json
+                                await call_claude_json(
+                                    "You are a test. Reply with valid JSON.",
+                                    'Return {"ok":true} exactly.',
+                                    max_tokens=50,
+                                )
+                            else:  # llm_stream
+                                from services.llm import call_claude_stream
+                                chunks = []
+                                async for chunk in call_claude_stream(
+                                    "You are a test. Reply with one word.",
+                                    "Say hello.",
+                                    max_tokens=20,
+                                ):
+                                    chunks.append(chunk)
+                                    if len(chunks) > 3:
+                                        break
+                            steps[ps["step"]] = {"ok": True}
+                        except Exception as e:
+                            steps[ps["step"]] = {"ok": False, "error": str(e)[:150]}
+                            overall_ok = False
+                            error_msg = str(e)[:200]
+
+        # Auto steps: inherit from LLM result
+        for ps in f.get("pipeline", []):
+            if ps["test"] == "auto":
+                steps[ps["step"]] = {"ok": overall_ok}
+
+        latency = int((time.time() - start) * 1000)
+        result = {
+            "status": "active" if overall_ok else "error",
+            "steps": steps,
+            "latency_ms": latency,
+            "message": error_msg if not overall_ok else "",
+        }
+        results[fid] = result
+        _last_test_results[fid] = result
+
+    return JSONResponse({"ok": True, "results": results})
 
 
 @router.post("/api/save-config", include_in_schema=False)
