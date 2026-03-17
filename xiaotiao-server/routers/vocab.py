@@ -48,13 +48,10 @@ Rules:
 """
 
 
-
 # SQLite3 compatibility shim — passes through raw SQL strings.
 # Named-parameter queries (`:param`) work directly with SQLite3 execute().
 def text(query: str) -> str:
     return query
-
-
 
 @router.get(
     "",
@@ -123,10 +120,10 @@ def get_vocab_list(
     params['limit'] = limit
     params['offset'] = offset
 
-    total_row = db.execute(count_query), params).fetchone()
+    total_row = db.execute(text(count_query), params).fetchone()
     total_count = int(total_row[0]) if total_row else 0
     
-    rows = db.execute(base_query), params).fetchall()
+    rows = db.execute(text(base_query), params).fetchall()
     
     items = []
     for r in rows:
@@ -172,16 +169,16 @@ def get_vocab_list(
 )
 def create_vocab(item: VocabItemCreate, db = Depends(get_db)):
     # Check if exists — if duplicate, mark as 易忘
-    existing = db.execute("SELECT id, duplicate_count FROM vocabulary_items WHERE word = :word"), {"word": item.word.lower()}).fetchone()
+    existing = db.execute(text("SELECT id, duplicate_count FROM vocabulary_items WHERE word = :word"), {"word": item.word.lower()}).fetchone()
     if existing:
         new_count = (existing['duplicate_count'] or 0) + 1
-        db.execute("""
+        db.execute(text("""
             UPDATE vocabulary_items
             SET duplicate_count = :count, is_easily_forgotten = 1
             WHERE id = :id
         """), {"count": new_count, "id": existing['id']})
         # Increase mastery threshold and reset mastered status
-        db.execute("""
+        db.execute(text("""
             UPDATE vocabulary_srs_states
             SET mastery_threshold = mastery_threshold + 2,
                 is_mastered = 0,
@@ -212,7 +209,7 @@ def create_vocab(item: VocabItemCreate, db = Depends(get_db)):
     now_str = datetime.now().isoformat()
     
     # 1. Insert vocab
-    db.execute("""
+    db.execute(text("""
         INSERT INTO vocabulary_items (id, word, definition_zh, part_of_speech, domain, source, example_sentence)
         VALUES (:id, :word, :definition_zh, :part_of_speech, :domain, :source, :example_sentence)
     """), {
@@ -227,7 +224,7 @@ def create_vocab(item: VocabItemCreate, db = Depends(get_db)):
     
     # 2. Insert SRS state
     srs_id = str(uuid.uuid4())
-    db.execute("""
+    db.execute(text("""
         INSERT INTO vocabulary_srs_states (id, vocab_id, traversal_count, ease_factor, interval_days, next_review_date, is_mastered, mastery_threshold)
         VALUES (:id, :vocab_id, 0, 2.5, 1, :next_review, 0, 3)
     """), {
@@ -285,7 +282,7 @@ def update_vocab(vocab_id: str, item: VocabItemUpdate, db = Depends(get_db)):
         return {"status": "ok"}
         
     query = f"UPDATE vocabulary_items SET {', '.join(updates)} WHERE id = :id"
-    res = db.execute(query), params)
+    res = db.execute(text(query), params)
     if res.rowcount == 0:
         raise HTTPException(status_code=404, detail="未找到该生词。")
     db.commit()
@@ -298,7 +295,7 @@ def update_vocab(vocab_id: str, item: VocabItemUpdate, db = Depends(get_db)):
     description="从生词本中移除指定生词。",
 )
 def delete_vocab(vocab_id: str, db = Depends(get_db)):
-    res = db.execute("DELETE FROM vocabulary_items WHERE id = :id"), {"id": vocab_id})
+    res = db.execute(text("DELETE FROM vocabulary_items WHERE id = :id"), {"id": vocab_id})
     if res.rowcount == 0:
         raise HTTPException(status_code=404, detail="未找到该生词。")
     db.commit()
@@ -481,12 +478,12 @@ def batch_create_vocab(
     description="获取生词总量、活跃数与今日需复习数量。",
 )
 def get_stats(db = Depends(get_db)):
-    total_row = db.execute("SELECT count(1) FROM vocabulary_items")).fetchone()
-    active_row = db.execute("SELECT count(1) FROM vocabulary_items WHERE is_active = 1")).fetchone()
+    total_row = db.execute(text("SELECT count(1) FROM vocabulary_items")).fetchone()
+    active_row = db.execute(text("SELECT count(1) FROM vocabulary_items WHERE is_active = 1")).fetchone()
     total = int(total_row[0]) if total_row else 0
     active = int(active_row[0]) if active_row else 0
     
-    srs_stats = db.execute("""
+    srs_stats = db.execute(text("""
         SELECT 
             SUM(CASE WHEN is_mastered = 1 THEN 1 ELSE 0 END) as mastered,
             SUM(CASE WHEN is_mastered = 0 AND next_review_date <= :now THEN 1 ELSE 0 END) as due_today
@@ -498,16 +495,16 @@ def get_stats(db = Depends(get_db)):
     month_str = datetime.now().strftime('%Y-%m')
     year_str = datetime.now().strftime('%Y')
 
-    today_count = db.execute(
+    today_count = db.execute(text(
         "SELECT count(1) FROM vocabulary_items WHERE date(created_at) = :d"
     ), {"d": today_str}).fetchone()[0] or 0
-    month_count = db.execute(
+    month_count = db.execute(text(
         "SELECT count(1) FROM vocabulary_items WHERE strftime('%Y-%m', created_at) = :m"
     ), {"m": month_str}).fetchone()[0] or 0
-    year_count = db.execute(
+    year_count = db.execute(text(
         "SELECT count(1) FROM vocabulary_items WHERE strftime('%Y', created_at) = :y"
     ), {"y": year_str}).fetchone()[0] or 0
-    easily_forgotten = db.execute(
+    easily_forgotten = db.execute(text(
         "SELECT count(1) FROM vocabulary_items WHERE is_easily_forgotten = 1"
     )).fetchone()[0] or 0
     
@@ -581,7 +578,7 @@ def export_vocab(
         title_suffix = "易忘生词"
 
     base_query += " ORDER BY v.created_at DESC"
-    rows = db.execute(base_query), params).fetchall()
+    rows = db.execute(text(base_query), params).fetchall()
 
     # Create Word document
     doc = docx.Document()
