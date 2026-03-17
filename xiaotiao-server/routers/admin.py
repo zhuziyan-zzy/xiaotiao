@@ -41,6 +41,14 @@ AI_FEATURES = [
         "template": "topic_generate.j2",
         "call_type": "JSON",
         "description": "根据用户选择的主题和词汇，AI 生成包含指定单词的教学文章",
+        "how_it_works": [
+            {"who": "user", "text": "👤 用户选择主题、领域、难度"},
+            {"who": "system", "text": "⚙️ 系统读取用户生词本"},
+            {"who": "system", "text": "📄 填入提示词模板 topic_generate.j2"},
+            {"who": "ai", "text": "🤖 AI 生成含指定词汇的文章(JSON)"},
+            {"who": "system", "text": "📤 返回文章 + 词汇高亮到前端"},
+        ],
+        "requires": ["🔑 AI API Key(如 Gemini/OpenAI)", "📄 模板文件 topic_generate.j2", "📚 用户生词本数据"],
         "variables": ["topics", "domains", "level", "article_length", "db_words", "new_word_count", "style_modifier", "rag_context"],
         "pipeline": [
             {"step": "request", "label": "前端请求", "test": "route"},
@@ -60,6 +68,14 @@ AI_FEATURES = [
         "template": "article_analyze.j2",
         "call_type": "JSON",
         "description": "AI 逐段解读英文文章，提供中文翻译、术语提取、关键句分析",
+        "how_it_works": [
+            {"who": "user", "text": "👤 用户粘贴英文文章"},
+            {"who": "user", "text": "👤 选择分析模式(通用/法律)"},
+            {"who": "system", "text": "📄 填入提示词模板 article_analyze.j2"},
+            {"who": "ai", "text": "🤖 AI 逐段翻译 + 术语提取(JSON)"},
+            {"who": "system", "text": "📤 前端渲染双语对照阅读"},
+        ],
+        "requires": ["🔑 AI API Key(如 Gemini/OpenAI)", "📄 模板文件 article_analyze.j2"],
         "variables": ["source_text", "analysis_mode", "grounded_context"],
         "pipeline": [
             {"step": "request", "label": "前端请求", "test": "route"},
@@ -79,6 +95,14 @@ AI_FEATURES = [
         "template": "translation.j2",
         "call_type": "JSON",
         "description": "AI 提供直译/法律/简明三种翻译风格，并对用户自译进行点评",
+        "how_it_works": [
+            {"who": "user", "text": "👤 用户输入源文 + 选择翻译方向"},
+            {"who": "user", "text": "👤 (可选) 输入自己的翻译"},
+            {"who": "system", "text": "📄 填入提示词模板 translation.j2"},
+            {"who": "ai", "text": "🤖 AI 生成三种风格译文 + 点评(JSON)"},
+            {"who": "system", "text": "📤 前端展示多风格翻译对比"},
+        ],
+        "requires": ["🔑 AI API Key(如 Gemini/OpenAI)", "📄 模板文件 translation.j2"],
         "variables": ["source_text", "direction", "user_translation"],
         "pipeline": [
             {"step": "request", "label": "前端请求", "test": "route"},
@@ -98,6 +122,14 @@ AI_FEATURES = [
         "template": "multimodal.j2",
         "call_type": "Vision + JSON",
         "description": "从图片、PDF、文档中 AI 识别并提取专业领域词汇",
+        "how_it_works": [
+            {"who": "user", "text": "👤 用户上传图片/PDF/文档"},
+            {"who": "system", "text": "⚙️ OCR 识别 / 文件解析取文本"},
+            {"who": "system", "text": "📄 填入提示词模板 multimodal.j2"},
+            {"who": "ai", "text": "🤖 AI Vision 提取专业词汇(JSON)"},
+            {"who": "system", "text": "📤 前端展示提取结果"},
+        ],
+        "requires": ["🔑 AI API Key(支持 Vision)", "📄 模板文件 multimodal.j2", "📁 文件解析服务"],
         "variables": ["domain", "extracted_text"],
         "pipeline": [
             {"step": "request", "label": "前端请求", "test": "route"},
@@ -117,6 +149,13 @@ AI_FEATURES = [
         "template": None,
         "call_type": "Stream",
         "description": "AI 流式分析论文内容，支持对话问答、段落翻译、术语提取、摘要生成",
+        "how_it_works": [
+            {"who": "user", "text": "👤 用户打开论文 → 点击AI功能"},
+            {"who": "system", "text": "⚙️ 提取论文段落 + 构建 Prompt"},
+            {"who": "ai", "text": "🤖 AI 流式输出(SSE Stream)"},
+            {"who": "system", "text": "📤 前端实时渲染AI回复"},
+        ],
+        "requires": ["🔑 AI API Key(支持 Stream)", "📡 SSE 流式传输支持"],
         "variables": [],
         "pipeline": [
             {"step": "request", "label": "前端请求", "test": "route"},
@@ -136,6 +175,14 @@ AI_FEATURES = [
         "template": None,
         "call_type": "JSON + Vision",
         "description": "AI 从文本或图片中批量提取单词并自动添加到生词本",
+        "how_it_works": [
+            {"who": "user", "text": "👤 用户粘贴文本 / 拍照上传"},
+            {"who": "system", "text": "⚙️ 文本预处理 / 图片OCR"},
+            {"who": "ai", "text": "🤖 AI 提取生词 + 释义(JSON)"},
+            {"who": "system", "text": "💾 写入生词本数据库"},
+            {"who": "system", "text": "📤 前端显示导入结果"},
+        ],
+        "requires": ["🔑 AI API Key(支持 Vision 可选)", "💾 SQLite 数据库"],
         "variables": [],
         "pipeline": [
             {"step": "request", "label": "前端请求", "test": "route"},
@@ -298,6 +345,64 @@ a:hover{text-decoration:underline}
 .pipe-label{font-size:.65rem;color:#64748b;text-align:center;max-width:70px;line-height:1.2}
 .pipe-arrow{color:#334155;font-size:.7rem;margin:0 2px;flex-shrink:0;align-self:flex-start;margin-top:3px}
 .pipe-err-msg{font-size:.68rem;color:#f87171;margin-top:4px;max-width:100%;word-break:break-all;text-align:center;padding:4px 8px;background:rgba(248,113,113,.06);border-radius:4px}
+
+/* Prompt flow diagram */
+.prompt-flow{margin-bottom:0}
+.flow-header{display:flex;align-items:center;gap:10px;margin-bottom:18px;padding:12px 16px;background:rgba(99,102,241,.08);border-radius:10px;border:1px solid rgba(99,102,241,.15)}
+.flow-icon{font-size:1.4rem}
+.flow-title{font-size:1rem;font-weight:600;color:#e2e8f0}
+.flow-call-type{margin-left:auto;font-size:.75rem;padding:3px 10px;border-radius:6px;background:rgba(99,102,241,.15);color:#818cf8;font-weight:500}
+.flow-diagram{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:4px 0}
+.flow-col{flex:1;min-width:180px;display:flex;flex-direction:column;gap:12px}
+.flow-col.center-col{flex:0.8}
+.flow-arrow-col{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:60px;gap:4px;padding:0 4px}
+.flow-arrow-line{width:2px;height:30px;background:linear-gradient(180deg,rgba(99,102,241,.3),rgba(99,102,241,.1))}
+.flow-arrow-label{font-size:.65rem;color:#818cf8;text-align:center;white-space:nowrap}
+.flow-arrow-tip{font-size:1.2rem;color:#818cf8}
+.flow-panel{border-radius:10px;padding:14px;border:1px solid rgba(148,163,184,.1);transition:border-color .2s}
+.flow-panel:hover{border-color:rgba(99,102,241,.3)}
+.flow-panel.user-panel{background:rgba(59,130,246,.06);border-color:rgba(59,130,246,.15)}
+.flow-panel.system-panel{background:rgba(245,158,11,.04);border-color:rgba(245,158,11,.12)}
+.flow-panel.template-panel{background:rgba(139,92,246,.06);border-color:rgba(139,92,246,.15)}
+.flow-panel.ai-panel{background:rgba(16,185,129,.06);border-color:rgba(16,185,129,.15)}
+.flow-panel.output-panel{background:rgba(99,102,241,.04);border-color:rgba(99,102,241,.12)}
+.flow-panel-title{font-size:.88rem;font-weight:600;color:#e2e8f0;margin-bottom:4px}
+.flow-panel-sub{font-size:.72rem;color:#64748b;margin-bottom:10px}
+.flow-panel-note{font-size:.72rem;color:#818cf8;margin-top:10px;text-align:center}
+.flow-template-preview{font-size:.75rem;color:#94a3b8;line-height:1.5;padding:8px 10px;background:rgba(0,0,0,.15);border-radius:6px}
+.flow-var-item{padding:8px 10px;border-radius:8px;margin-bottom:6px;display:flex;flex-direction:column;gap:2px}
+.flow-var-item.user{background:rgba(59,130,246,.08)}
+.flow-var-item.system{background:rgba(245,158,11,.06)}
+.flow-var-item code{font-size:.78rem;color:#818cf8;background:rgba(99,102,241,.12);padding:1px 6px;border-radius:3px;align-self:flex-start}
+.flow-var-desc{font-size:.75rem;color:#cbd5e1;margin-top:2px}
+.flow-var-ui{font-size:.68rem;color:#64748b}
+.flow-var-example{font-size:.65rem;color:#475569}
+.flow-var-example em{color:#94a3b8;font-style:normal}
+.flow-var-empty{font-size:.75rem;color:#475569;font-style:italic;padding:8px 0}
+.flow-legend{display:flex;gap:18px;margin-top:14px;padding:8px 12px;border-top:1px solid rgba(148,163,184,.08)}
+.flow-legend-item{font-size:.72rem;color:#64748b;display:flex;align-items:center;gap:6px}
+.flow-dot{width:10px;height:10px;border-radius:50%}
+.flow-dot.user{background:#3b82f6}
+.flow-dot.system{background:#f59e0b}
+
+/* How-it-works workflow steps */
+.fc-desc{font-size:.78rem;color:#94a3b8;margin:8px 0 4px;line-height:1.4}
+.hiw-section,.req-section,.pipeline-section{margin:10px 0 6px;padding:10px 12px;background:rgba(0,0,0,.12);border-radius:8px}
+.hiw-title,.req-title{font-size:.75rem;font-weight:600;color:#94a3b8;margin-bottom:8px}
+.hiw-steps{display:flex;flex-direction:column;gap:0}
+.hiw-step{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;font-size:.78rem;color:#cbd5e1}
+.hiw-step.hiw-user{background:rgba(59,130,246,.08)}
+.hiw-step.hiw-ai{background:rgba(74,222,128,.08)}
+.hiw-step.hiw-system{background:rgba(245,158,11,.06)}
+.hiw-num{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;flex-shrink:0}
+.hiw-user .hiw-num{background:rgba(59,130,246,.2);color:#60a5fa}
+.hiw-ai .hiw-num{background:rgba(74,222,128,.2);color:#4ade80}
+.hiw-system .hiw-num{background:rgba(245,158,11,.15);color:#fbbf24}
+.hiw-text{flex:1}
+.hiw-connector{display:flex;justify-content:center;height:8px}
+.hiw-connector::before{content:'';display:block;width:2px;height:100%;background:rgba(148,163,184,.15)}
+.req-list{display:flex;flex-wrap:wrap;gap:6px}
+.req-item{font-size:.72rem;padding:3px 10px;border-radius:12px;background:rgba(99,102,241,.08);color:#a5b4fc;border:1px solid rgba(99,102,241,.12)}
 """
 
 
@@ -485,6 +590,19 @@ def admin_dashboard(request: Request):
         else:
             tpl_tag = '<span class="fc-tag inline">⚡ 内联 prompt</span>'
 
+        # Build how-it-works visual steps
+        how_html = ""
+        for idx, step in enumerate(f.get("how_it_works", [])):
+            who = step.get("who", "system")
+            color_cls = "hiw-user" if who == "user" else ("hiw-ai" if who == "ai" else "hiw-system")
+            connector = '<div class="hiw-connector"></div>' if idx < len(f.get("how_it_works", [])) - 1 else ""
+            how_html += f'<div class="hiw-step {color_cls}"><span class="hiw-num">{idx+1}</span><span class="hiw-text">{step["text"]}</span></div>{connector}'
+
+        # Build requires HTML
+        req_html = ""
+        for r in f.get("requires", []):
+            req_html += f'<span class="req-item">{r}</span>'
+
         # Build pipeline HTML
         pipeline_html = ""
         step_results = st_info.get("steps", {}) if isinstance(st_info, dict) else {}
@@ -497,7 +615,6 @@ def admin_dashboard(request: Request):
                 dot_class = "active"
             elif step_st == "error":
                 dot_class = "error"
-            # Arrow before each step (except first)
             if i > 0:
                 pipeline_html += '<span class="pipe-arrow">→</span>'
             pipeline_html += f'<div class="pipe-step"><div class="pipe-dot {dot_class}" id="dot-{f["id"]}-{ps["step"]}"></div><div class="pipe-label">{ps["label"]}</div></div>'
@@ -527,10 +644,26 @@ def admin_dashboard(request: Request):
                 <span class="arrow">→</span>
                 <span>{f["frontend_action"]}</span>
             </div>
-            <div class="pipeline" id="pipeline-{f['id']}">
-                {pipeline_html}
+            <div class="fc-desc">{f["description"]}</div>
+
+            <div class="hiw-section">
+                <div class="hiw-title">📋 工作流程（一步步如何运行）</div>
+                <div class="hiw-steps">{how_html}</div>
             </div>
-            {err_html}
+
+            <div class="req-section">
+                <div class="req-title">🔧 技术需求（缺一不可）</div>
+                <div class="req-list">{req_html}</div>
+            </div>
+
+            <div class="pipeline-section">
+                <div class="hiw-title">🚦 实时状态检测</div>
+                <div class="pipeline" id="pipeline-{f['id']}">
+                    {pipeline_html}
+                </div>
+                {err_html}
+            </div>
+
             <div class="fc-meta">
                 <span class="fc-tag call">⚡ {f["call_type"]}</span>
                 {tpl_tag}
@@ -1005,48 +1138,122 @@ def edit_prompt(filename: str, request: Request):
     content = filepath.read_text(encoding="utf-8")
     escaped = html_mod.escape(content)
 
-    # Feature info banner
+    # Feature info and visual flow
     feat = _TPL_FEATURE_MAP.get(filename)
-    banner = ""
+
+    # Enriched variable metadata: source ("user" = 用户前端输入, "system" = 后端系统注入)
+    _VAR_META = {
+        "topics": {"desc": "用户选择的主题列表", "source": "user", "ui": "主题选择器（Chip 多选）", "example": '["科技", "法律"]'},
+        "domains": {"desc": "学科领域", "source": "user", "ui": "领域下拉菜单", "example": '["计算机", "法学"]'},
+        "level": {"desc": "难度等级", "source": "user", "ui": "难度滑块", "example": "intermediate"},
+        "article_length": {"desc": "目标文章长度", "source": "user", "ui": "长度选择器", "example": "300"},
+        "db_words": {"desc": "用户生词本中的单词列表", "source": "system", "ui": "自动从数据库读取", "example": '["litigation", "verdict"]'},
+        "new_word_count": {"desc": "需要引入的新词汇数量", "source": "system", "ui": "基于用户设置自动计算", "example": "5"},
+        "style_modifier": {"desc": "文章风格提示", "source": "system", "ui": "数据库配置字段", "example": "academic, formal"},
+        "rag_context": {"desc": "RAG 检索到的参考上下文", "source": "system", "ui": "后端向量检索结果", "example": "(相关文档片段)"},
+        "source_text": {"desc": "用户输入的源文本", "source": "user", "ui": "文本输入框", "example": "The court ruled..."},
+        "analysis_mode": {"desc": "分析模式", "source": "user", "ui": "模式切换按钮", "example": "legal_focus"},
+        "grounded_context": {"desc": "RAG 系统注入的上下文", "source": "system", "ui": "后端自动检索注入", "example": "(知识库片段)"},
+        "direction": {"desc": "翻译方向", "source": "user", "ui": "方向切换按钮", "example": "en_to_zh"},
+        "user_translation": {"desc": "用户自译文本", "source": "user", "ui": "翻译输入框（可选）", "example": "法院裁定..."},
+        "domain": {"desc": "提取词汇的领域聚焦", "source": "user", "ui": "领域输入框", "example": "法律"},
+        "extracted_text": {"desc": "从文档提取的文本内容", "source": "system", "ui": "OCR / 文件解析结果", "example": "(提取的文字)"},
+    }
+
+    flow_html = ""
     if feat:
-        banner = f"""
-        <div class="feature-banner">
-            <span class="fb-icon">{feat["icon"]}</span>
-            <div class="fb-text">
-                此模板驱动 <strong>{feat["frontend"]} → {feat["name"]}</strong> 功能
-                <br>前端路径: <code>{feat["frontend_path"]}</code> · 调用方式: <strong>{feat["call_type"]}</strong>
+        # Split variables by source
+        user_vars = [(v, _VAR_META.get(v, {})) for v in feat.get("variables", []) if _VAR_META.get(v, {}).get("source") == "user"]
+        system_vars = [(v, _VAR_META.get(v, {})) for v in feat.get("variables", []) if _VAR_META.get(v, {}).get("source") == "system"]
+
+        # User input panel
+        user_items = ""
+        for v, meta in user_vars:
+            user_items += f'''<div class="flow-var-item user">
+                <code>{{{{{v}}}}}</code>
+                <span class="flow-var-desc">{meta.get("desc", v)}</span>
+                <span class="flow-var-ui">🖥️ {meta.get("ui", "")}</span>
+                <span class="flow-var-example">例: <em>{html_mod.escape(meta.get("example", ""))}</em></span>
+            </div>'''
+
+        # System input panel
+        sys_items = ""
+        for v, meta in system_vars:
+            sys_items += f'''<div class="flow-var-item system">
+                <code>{{{{{v}}}}}</code>
+                <span class="flow-var-desc">{meta.get("desc", v)}</span>
+                <span class="flow-var-ui">⚙️ {meta.get("ui", "")}</span>
+                <span class="flow-var-example">例: <em>{html_mod.escape(meta.get("example", ""))}</em></span>
+            </div>'''
+
+        flow_html = f'''
+        <div class="prompt-flow">
+            <div class="flow-header">
+                <span class="flow-icon">{feat["icon"]}</span>
+                <span class="flow-title">{feat["frontend"]} → {feat["name"]}</span>
+                <span class="flow-call-type">{feat["call_type"]}</span>
+            </div>
+
+            <div class="flow-diagram">
+                <!-- Column 1: Inputs -->
+                <div class="flow-col">
+                    <div class="flow-panel user-panel">
+                        <div class="flow-panel-title">👤 用户前端输入</div>
+                        <div class="flow-panel-sub">用户在前端 UI 操作产生的数据</div>
+                        {user_items if user_items else '<div class="flow-var-empty">此功能无用户输入变量</div>'}
+                    </div>
+                    <div class="flow-panel system-panel">
+                        <div class="flow-panel-title">⚙️ 后端系统注入</div>
+                        <div class="flow-panel-sub">服务器自动填充的数据</div>
+                        {sys_items if sys_items else '<div class="flow-var-empty">此功能无系统注入变量</div>'}
+                    </div>
+                </div>
+
+                <!-- Arrow -->
+                <div class="flow-arrow-col">
+                    <div class="flow-arrow-line"></div>
+                    <div class="flow-arrow-label">填充变量</div>
+                    <div class="flow-arrow-tip">→</div>
+                </div>
+
+                <!-- Column 2: Template -->
+                <div class="flow-col center-col">
+                    <div class="flow-panel template-panel">
+                        <div class="flow-panel-title">📄 提示词模板</div>
+                        <div class="flow-panel-sub">{filename}</div>
+                        <div class="flow-template-preview">管理员编写的 System Prompt 模板，<br>包含 Jinja2 变量占位符。<br>用户输入 + 系统数据填充变量后，<br>组装成完整的 Prompt 发送给 AI。</div>
+                        <div class="flow-panel-note">⬇️ 下方可直接编辑模板内容</div>
+                    </div>
+                </div>
+
+                <!-- Arrow -->
+                <div class="flow-arrow-col">
+                    <div class="flow-arrow-line"></div>
+                    <div class="flow-arrow-label">发送给 AI</div>
+                    <div class="flow-arrow-tip">→</div>
+                </div>
+
+                <!-- Column 3: AI Output -->
+                <div class="flow-col">
+                    <div class="flow-panel ai-panel">
+                        <div class="flow-panel-title">🤖 AI 模型</div>
+                        <div class="flow-panel-sub">{feat["call_type"]} 调用</div>
+                        <div class="flow-template-preview">AI 根据完整 Prompt 生成结果，<br>返回给前端展示。</div>
+                    </div>
+                    <div class="flow-panel output-panel">
+                        <div class="flow-panel-title">📤 输出到前端</div>
+                        <div class="flow-panel-sub">{feat["frontend"]} 页面</div>
+                        <div class="flow-template-preview">{feat["description"]}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flow-legend">
+                <span class="flow-legend-item"><span class="flow-dot user"></span> 用户控制 — 修改前端 UI 影响此变量</span>
+                <span class="flow-legend-item"><span class="flow-dot system"></span> 后端控制 — 修改模板/代码影响此变量</span>
             </div>
         </div>
-        """
-        # Variables table
-        if feat["variables"]:
-            var_descriptions = {
-                "topics": "用户选择的主题列表",
-                "domains": "用户选择的学科领域",
-                "level": "难度等级: beginner / intermediate / advanced",
-                "article_length": "目标文章长度（字数）",
-                "db_words": "从用户生词本中提取的单词列表",
-                "new_word_count": "需要引入的新词汇数量",
-                "style_modifier": "文章风格提示（来自数据库配置）",
-                "rag_context": "RAG 检索到的参考上下文",
-                "source_text": "用户输入的源文本",
-                "analysis_mode": "分析模式: plain / legal_focus",
-                "grounded_context": "RAG 系统注入的上下文",
-                "direction": "翻译方向: zh_to_en / en_to_zh",
-                "user_translation": "用户自译文本（可选）",
-                "domain": "提取词汇的领域聚焦",
-                "extracted_text": "从文档提取的文本内容",
-            }
-            rows = ""
-            for v in feat["variables"]:
-                desc = var_descriptions.get(v, "—")
-                rows += f"<tr><td><code>{{{{{v}}}}}</code></td><td>{desc}</td></tr>"
-            banner += f"""
-            <table class="var-table">
-                <thead><tr><th>模板变量</th><th>说明</th></tr></thead>
-                <tbody>{rows}</tbody>
-            </table>
-            """
+        '''
 
     body = f"""
     <div class="dash">
@@ -1054,8 +1261,10 @@ def edit_prompt(filename: str, request: Request):
             <h1>📝 编辑模板: {filename}</h1>
             <a href="/admin/logout" class="logout">退出登录</a>
         </div>
+        <div class="section">
+            {flow_html}
+        </div>
         <div class="section editor-wrap">
-            {banner}
             <form method="POST" action="/admin/prompts/{filename}" id="edit-form">
                 <textarea name="content" id="editor" spellcheck="false">{escaped}</textarea>
                 <div class="editor-actions">
