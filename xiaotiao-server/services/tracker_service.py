@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import List
 
-from services.llm import call_claude_json
+
 
 
 def list_topics(db):
@@ -74,24 +74,10 @@ def delete_topic(db, topic_id: str):
 
 
 async def _generate_brief(title: str, abstract: str) -> str:
+    """Generate a brief summary from the abstract — no LLM, just truncate."""
     if not abstract:
         return title[:120]
-
-    system_prompt = (
-        "你是一位学术论文追踪助手。请基于标题与摘要生成一段中文短概要。"
-        "要求：50-120字，聚焦核心贡献与结论，只返回 JSON："
-        '{"brief":"..."}'
-    )
-    user_prompt = f"标题：{title}\n摘要：{abstract}"
-    try:
-        result = await call_claude_json(system_prompt, user_prompt, max_tokens=300)
-        brief = (result.get("brief") or result.get("summary") or "").strip()
-        if brief:
-            return brief
-    except Exception:
-        pass
-
-    clipped = abstract[:200]
+    clipped = abstract[:200].strip()
     return clipped + ("..." if len(abstract) > 200 else "")
 
 

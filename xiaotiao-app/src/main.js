@@ -15,6 +15,7 @@ import { renderPaperReaderPage, initPaperReaderPage } from './pages/paper_reader
 import { renderTrackerPage, initTrackerPage } from './pages/tracker_page.js';
 import { isAuthed, logout } from './auth.js';
 import { initGlobalWordSelector, destroyGlobalWordSelector } from './components/word_selector.js';
+import { initTaskManager } from './components/task_manager.js';
 
 const router = new Router('app');
 
@@ -227,6 +228,7 @@ initGlobalInteractions();
 initThemeConfig();
 initSegmentedControls();
 initAuthActions();
+initTaskManager();
 
 // ── 3. Navbar Scroll Enhancement ─────────────
 // Increases glass opacity when scrolled, creating depth.
