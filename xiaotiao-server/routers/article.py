@@ -41,7 +41,7 @@ async def analyze_article(req: ArticleAnalyzeRequest):
         response = await prompt_engine.generate(
             template_name="article_analyze.j2",
             response_model=ArticleAnalyzeResponse,
-            max_tokens=4000,
+            max_tokens=8000,
             feature_id="article_analyze",
             # 模板变量
             analysis_mode=req.analysis_mode,

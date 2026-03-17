@@ -35,7 +35,7 @@ async def generate_topic(req: TopicGenerateRequest, db=Depends(get_db)):
         response = await prompt_engine.generate(
             template_name="topic_generate.j2",
             response_model=TopicGenerateResponse,
-            max_tokens=int(req.article_length) * 3 + 1000,
+            max_tokens=int(req.article_length) * 6 + 2000,
             feature_id="topic_generate",
             # 模板变量 — 前端参数直接注入
             topics=req.topics,

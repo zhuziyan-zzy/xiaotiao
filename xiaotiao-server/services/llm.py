@@ -236,11 +236,15 @@ def _robust_json_loads(text: str) -> dict:
         pass
 
     # Strategy 3: try to find the largest valid JSON by trimming from the end
-    for end_pos in range(len(cleaned), max(0, len(cleaned) - 500), -1):
+    # Scan further back for long responses (up to 2000 chars)
+    scan_range = min(len(cleaned), 2000)
+    for end_pos in range(len(cleaned), max(0, len(cleaned) - scan_range), -1):
         candidate = cleaned[:end_pos]
-        # Balance braces
+        # Balance brackets and braces
+        open_brackets = candidate.count('[') - candidate.count(']')
+        candidate += ']' * max(0, open_brackets)
         open_braces = candidate.count('{') - candidate.count('}')
-        candidate += '}' * open_braces
+        candidate += '}' * max(0, open_braces)
         try:
             return json.loads(candidate)
         except json.JSONDecodeError:
