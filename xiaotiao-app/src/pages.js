@@ -217,7 +217,7 @@ export function renderTopicExplorer() {
           <label class="form-label">专业方向 (多选)</label>
           <div class="checkbox-group topic-domain-grid" id="topic-domain-checklist">
             <label class="checkbox-label"><input type="checkbox" value="international-law" checked><span></span> 国际法</label>
-            <label class="checkbox-label"><input type="checkbox" value="commercial-law"><span></span> 商法</label>
+            <label class="checkbox-label"><input type="checkbox" value="commercial-law" checked><span></span> 商法</label>
             <label class="checkbox-label"><input type="checkbox" value="constitutional-law"><span></span> 宪法学</label>
             <label class="checkbox-label"><input type="checkbox" value="criminal-law"><span></span> 刑法学</label>
             <label class="checkbox-label"><input type="checkbox" value="ip-law"><span></span> 知识产权法</label>
@@ -243,11 +243,11 @@ export function renderTopicExplorer() {
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;flex:1;">
           <div style="display:flex;align-items:center;gap:6px;">
             <span style="color:var(--text-muted);font-size:0.8rem;">方向：</span>
-            <span id="summary-domains" style="color:var(--text-primary);font-size:0.85rem;font-weight:500;">国际法</span>
+            <span id="summary-domains" style="color:var(--text-primary);font-size:0.85rem;font-weight:500;">国际法, 商法</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
             <span style="color:var(--text-muted);font-size:0.8rem;">等级：</span>
-            <span id="summary-level" style="color:var(--text-primary);font-size:0.85rem;">中级</span>
+            <span id="summary-level" style="color:var(--text-primary);font-size:0.85rem;">初级</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
             <span style="color:var(--text-muted);font-size:0.8rem;">风格：</span>
@@ -255,7 +255,7 @@ export function renderTopicExplorer() {
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
             <span style="color:var(--text-muted);font-size:0.8rem;">长度：</span>
-            <span id="summary-length" style="color:var(--text-primary);font-size:0.85rem;">400 词</span>
+            <span id="summary-length" style="color:var(--text-primary);font-size:0.85rem;">250 词</span>
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-shrink:0;">
@@ -285,8 +285,8 @@ export function renderTopicExplorer() {
                 <div class="form-group">
                   <label class="form-label">难度等级</label>
                   <select class="form-select" id="topic-level">
-                    <option value="beginner">初级 Beginner</option>
-                    <option value="intermediate" selected>中级 Intermediate</option>
+                    <option value="beginner" selected>初级 Beginner</option>
+                    <option value="intermediate">中级 Intermediate</option>
                     <option value="advanced">高级 Advanced</option>
                   </select>
                 </div>
@@ -303,18 +303,18 @@ export function renderTopicExplorer() {
               </div>
 
               <div class="form-group">
-                <label class="form-label">文章长度 (Words): <span id="label-len">400</span></label>
-                <input type="range" id="topic-len-slider" min="100" max="1000" step="50" value="400" style="width: 100%;">
+                <label class="form-label">文章长度 (Words): <span id="label-len">250</span></label>
+                <input type="range" id="topic-len-slider" min="100" max="1000" step="50" value="250" style="width: 100%;">
               </div>
 
               <div class="form-row">
                 <div class="form-group">
-                  <label class="form-label">需复习的生词量: <span id="label-db-words">8</span></label>
-                  <input type="range" id="topic-db-words-slider" min="0" max="20" step="1" value="8" style="width: 100%;">
+                  <label class="form-label">需复习的生词量: <span id="label-db-words">4</span></label>
+                  <input type="range" id="topic-db-words-slider" min="0" max="20" step="1" value="4" style="width: 100%;">
                 </div>
                 <div class="form-group">
-                  <label class="form-label">引入新词数量: <span id="label-new-words">5</span></label>
-                  <input type="range" id="topic-new-words-slider" min="0" max="15" step="1" value="5" style="width: 100%;">
+                  <label class="form-label">引入新词数量: <span id="label-new-words">4</span></label>
+                  <input type="range" id="topic-new-words-slider" min="0" max="15" step="1" value="4" style="width: 100%;">
                 </div>
               </div>
 
