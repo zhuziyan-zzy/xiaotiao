@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 router = APIRouter(prefix="/admin", tags=["管理后台"])
 
 # ── Config ──────────────────────────────────────────────
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "xiaotiao")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "xiaotiao2026")
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
@@ -403,6 +404,18 @@ a:hover{text-decoration:underline}
 .hiw-connector::before{content:'';display:block;width:2px;height:100%;background:rgba(148,163,184,.15)}
 .req-list{display:flex;flex-wrap:wrap;gap:6px}
 .req-item{font-size:.72rem;padding:3px 10px;border-radius:12px;background:rgba(99,102,241,.08);color:#a5b4fc;border:1px solid rgba(99,102,241,.12)}
+
+/* API assignment section */
+.api-assign-section{margin:10px 0 6px;padding:10px 12px;background:rgba(16,185,129,.04);border-radius:8px;border:1px solid rgba(16,185,129,.1)}
+.api-assign-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.api-badge-active{font-size:.72rem;padding:2px 10px;border-radius:10px;background:rgba(16,185,129,.15);color:#34d399;font-weight:600}
+.api-badge-none{font-size:.72rem;padding:2px 10px;border-radius:10px;background:rgba(239,68,68,.12);color:#f87171;font-weight:600}
+.api-override{font-size:.65rem;color:#fbbf24;background:rgba(251,191,36,.08);padding:1px 6px;border-radius:6px}
+.api-default{font-size:.65rem;color:#64748b;background:rgba(100,116,139,.08);padding:1px 6px;border-radius:6px}
+.api-assign-body{display:flex;align-items:center;gap:8px}
+.api-select{flex:1;padding:5px 8px;border-radius:6px;background:#1e293b;color:#e2e8f0;border:1px solid rgba(148,163,184,.15);font-size:.75rem;outline:none}
+.api-select:focus{border-color:#6366f1}
+.api-save-msg{font-size:.7rem;transition:opacity .3s}
 """
 
 
@@ -488,9 +501,10 @@ def admin_login_page(request: Request):
     body = """
     <div class="login-wrap"><div class="login-card">
         <h1>🔧 再译 AI 操控中心</h1>
-        <p>请输入管理密码以继续</p>
+        <p>请输入管理员用户名和密码</p>
         <form method="POST" action="/admin/login">
-            <input type="password" name="password" placeholder="管理密码" autofocus required>
+            <input type="text" name="username" placeholder="用户名" autofocus required>
+            <input type="password" name="password" placeholder="密码" required>
             <button type="submit">登 录</button>
         </form>
     </div></div>
@@ -501,8 +515,9 @@ def admin_login_page(request: Request):
 @router.post("/login", response_class=HTMLResponse, include_in_schema=False)
 async def admin_login(request: Request):
     form = await request.form()
+    username = form.get("username", "")
     pwd = form.get("password", "")
-    if pwd == ADMIN_PASSWORD:
+    if username == ADMIN_USERNAME and pwd == ADMIN_PASSWORD:
         sid = _create_session()
         resp = RedirectResponse("/admin/dashboard", status_code=302)
         resp.set_cookie(SESSION_COOKIE, sid, httponly=True, max_age=SESSION_TTL, samesite="lax")
@@ -510,12 +525,13 @@ async def admin_login(request: Request):
     body = """
     <div class="login-wrap"><div class="login-card">
         <h1>🔧 再译 AI 操控中心</h1>
-        <p>请输入管理密码以继续</p>
+        <p>请输入管理员用户名和密码</p>
         <form method="POST" action="/admin/login">
-            <input type="password" name="password" placeholder="管理密码" autofocus required>
+            <input type="text" name="username" placeholder="用户名" autofocus required>
+            <input type="password" name="password" placeholder="密码" required>
             <button type="submit">登 录</button>
         </form>
-        <div class="login-error">❌ 密码错误，请重试</div>
+        <div class="login-error">❌ 用户名或密码错误，请重试</div>
     </div></div>
     """
     return HTMLResponse(_page("登录", body))
@@ -573,6 +589,10 @@ def admin_dashboard(request: Request):
     error_count = sum(1 for s in statuses.values() if isinstance(s, dict) and s.get('status') == 'error')
     untested_count = sum(1 for s in statuses.values() if isinstance(s, dict) and s.get('status') == 'untested')
 
+    # ── Per-feature provider assignments ──
+    from services.llm import get_feature_provider, get_compatible_providers, get_all_feature_assignments, PROVIDER_CAPABILITIES
+    assignments = get_all_feature_assignments()
+
     # ── Build feature cards with pipeline ──
     feature_cards = ""
     for f in AI_FEATURES:
@@ -602,6 +622,42 @@ def admin_dashboard(request: Request):
         req_html = ""
         for r in f.get("requires", []):
             req_html += f'<span class="req-item">{r}</span>'
+
+        # Build per-feature API assignment selector
+        fid = f["id"]
+        compatible = get_compatible_providers(fid)
+        assign = assignments.get(fid, {})
+        current_provider = assign.get("provider", "mock")
+        is_override = assign.get("is_override", False)
+        cur_caps = PROVIDER_CAPABILITIES.get(current_provider, {})
+        cur_name = cur_caps.get("name", current_provider.upper()) if cur_caps else current_provider.upper()
+        cur_badge_cls = "api-badge-active" if current_provider != "mock" else "api-badge-none"
+        override_tag = '<span class="api-override">✏️ 手动指定</span>' if is_override else '<span class="api-default">🔄 全局默认</span>'
+
+        # Build dropdown options — only compatible providers
+        options_html = f'<option value="default"{"" if is_override else " selected"}>🔄 使用全局默认</option>'
+        for p in compatible:
+            if not p["compatible"]:
+                continue
+            sel = " selected" if is_override and p["id"] == current_provider else ""
+            avail = "" if p["has_key"] else " (❌ 未配置Key)"
+            models_str = ", ".join(p.get("models", [])[:3])
+            options_html += f'<option value="{p["id"]}"{sel}>{p["name"]}{avail} [{models_str}]</option>'
+
+        api_section = f'''
+            <div class="api-assign-section" id="api-section-{fid}">
+                <div class="api-assign-header">
+                    <span class="hiw-title">🔗 AI API 分配</span>
+                    <span class="{cur_badge_cls}">{cur_name}</span>
+                    {override_tag}
+                </div>
+                <div class="api-assign-body">
+                    <select class="api-select" id="api-select-{fid}" onchange="setFeatureProvider('{fid}', this.value)">
+                        {options_html}
+                    </select>
+                    <span class="api-save-msg" id="api-msg-{fid}"></span>
+                </div>
+            </div>'''
 
         # Build pipeline HTML
         pipeline_html = ""
@@ -655,6 +711,8 @@ def admin_dashboard(request: Request):
                 <div class="req-title">🔧 技术需求（缺一不可）</div>
                 <div class="req-list">{req_html}</div>
             </div>
+
+            {api_section}
 
             <div class="pipeline-section">
                 <div class="hiw-title">🚦 实时状态检测</div>
@@ -791,6 +849,13 @@ def admin_dashboard(request: Request):
                 {tpl_html}
             </ul>
         </div>
+
+        <!-- Panel 4: Database Viewer -->
+        <div class="section">
+            <h2>🗄️ 数据库管理</h2>
+            <div class="subtitle">查看和管理所有数据库表的内容。</div>
+            <a href="/admin/database" style="display:inline-block;padding:8px 20px;background:rgba(99,102,241,.15);color:#a5b4fc;border-radius:8px;text-decoration:none;font-size:.85rem;margin-top:8px;transition:background .2s" onmouseover="this.style.background='rgba(99,102,241,.25)'" onmouseout="this.style.background='rgba(99,102,241,.15)'">📋 打开数据库浏览器 →</a>
+        </div>
     </div>
 
     <script>
@@ -919,12 +984,58 @@ def admin_dashboard(request: Request):
         btn.disabled = false;
         btn.innerHTML = '🧪 逐项测试全部功能';
     }}
+
+    async function setFeatureProvider(featureId, provider) {{
+        const msgEl = document.getElementById('api-msg-' + featureId);
+        msgEl.textContent = '⏳ 保存中...';
+        msgEl.style.color = '#94a3b8';
+        try {{
+            const resp = await fetch('/admin/api/set-feature-provider', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                credentials: 'include',
+                body: JSON.stringify({{feature_id: featureId, provider: provider}})
+            }});
+            const data = await resp.json();
+            if (data.ok) {{
+                msgEl.textContent = '✅ 已保存: ' + data.provider_name;
+                msgEl.style.color = '#4ade80';
+                setTimeout(() => {{ msgEl.textContent = ''; }}, 3000);
+            }} else {{
+                msgEl.textContent = '❌ ' + (data.error || '保存失败');
+                msgEl.style.color = '#f87171';
+            }}
+        }} catch(e) {{
+            msgEl.textContent = '❌ 网络错误';
+            msgEl.style.color = '#f87171';
+        }}
+    }}
     </script>
     """
     return HTMLResponse(_page("AI 操控中心", body))
 
 
 # ── API Endpoints ────────────────────────────────────────
+
+@router.post("/api/set-feature-provider", include_in_schema=False)
+async def set_feature_provider_api(request: Request):
+    if not _check_session(request):
+        return JSONResponse({"ok": False, "error": "未登录"}, status_code=401)
+    try:
+        body = await request.json()
+        feature_id = body.get("feature_id", "")
+        provider = body.get("provider", "default")
+        from services.llm import set_feature_provider, PROVIDER_CAPABILITIES
+        ok = set_feature_provider(feature_id, provider)
+        if ok:
+            caps = PROVIDER_CAPABILITIES.get(provider, {})
+            name = caps.get("name", "全局默认") if provider != "default" else "全局默认"
+            return JSONResponse({"ok": True, "provider_name": name})
+        else:
+            return JSONResponse({"ok": False, "error": f"该 API 不兼容此功能所需的能力"})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
 
 @router.post("/api/test-connection", include_in_schema=False)
 async def test_connection(request: Request):
@@ -1358,3 +1469,145 @@ async def save_prompt(filename: str, request: Request):
     </script>
     """
     return HTMLResponse(_page(f"编辑 {filename}", body))
+
+
+# ── Database Viewer ──────────────────────────────────────
+
+_DB_REGISTRY = {
+    "xiaotiao": {"path": os.getenv("DB_PATH", "./db/xiaotiao.db"), "label": "主数据库 (xiaotiao)"},
+    "auth": {"path": os.getenv("AUTH_DB_PATH", "./db/auth.db"), "label": "认证数据库 (auth)"},
+}
+
+
+@router.get("/database", response_class=HTMLResponse, include_in_schema=False)
+def admin_database(request: Request):
+    if not _check_session(request):
+        return RedirectResponse("/admin", status_code=302)
+
+    import sqlite3
+    db_cards = ""
+    for db_id, db_info in _DB_REGISTRY.items():
+        db_path = db_info["path"]
+        label = db_info["label"]
+        tables_html = ""
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+            for t in tables:
+                tname = t["name"]
+                count = conn.execute(f"SELECT COUNT(*) as c FROM [{tname}]").fetchone()["c"]
+                tables_html += f'<a class="db-table-link" href="/admin/database/{db_id}/{tname}"><span class="db-table-name">📋 {tname}</span><span class="db-table-count">{count} 行</span></a>'
+            conn.close()
+        except Exception as exc:
+            tables_html = f'<div style="color:#f87171">❌ 无法连接: {exc}</div>'
+
+        db_cards += f"""
+        <div class="db-card">
+            <div class="db-card-header"><span>🗄️ {label}</span><span class="db-path">{db_path}</span></div>
+            <div class="db-tables">{tables_html}</div>
+        </div>
+        """
+
+    body = f"""
+    <div class="section-header">
+        <h2>🗄️ 数据库浏览器</h2>
+        <a href="/admin/dashboard" class="back-link">← 返回仪表盘</a>
+    </div>
+    <style>
+    .db-card{{background:rgba(30,41,59,.7);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid rgba(148,163,184,.08)}}
+    .db-card-header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-weight:600;color:#e2e8f0}}
+    .db-path{{font-size:.7rem;color:#64748b;font-weight:400}}
+    .db-tables{{display:flex;flex-direction:column;gap:4px}}
+    .db-table-link{{display:flex;justify-content:space-between;padding:8px 12px;border-radius:6px;background:rgba(99,102,241,.04);color:#a5b4fc;text-decoration:none;font-size:.82rem;transition:background .2s}}
+    .db-table-link:hover{{background:rgba(99,102,241,.12)}}
+    .db-table-count{{color:#64748b;font-size:.72rem}}
+    .back-link{{color:#94a3b8;text-decoration:none;font-size:.85rem}}
+    .back-link:hover{{color:#e2e8f0}}
+    .section-header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}}
+    </style>
+    {db_cards}
+    """
+    return HTMLResponse(_page("数据库浏览器", body))
+
+
+@router.get("/database/{db_id}/{table_name}", response_class=HTMLResponse, include_in_schema=False)
+def admin_database_table(request: Request, db_id: str, table_name: str):
+    if not _check_session(request):
+        return RedirectResponse("/admin", status_code=302)
+
+    import sqlite3
+    db_info = _DB_REGISTRY.get(db_id)
+    if not db_info:
+        return HTMLResponse(_page("错误", "<p>数据库不存在</p>"))
+
+    page = int(request.query_params.get("page", "1"))
+    per_page = 50
+    offset = (page - 1) * per_page
+
+    try:
+        conn = sqlite3.connect(db_info["path"])
+        conn.row_factory = sqlite3.Row
+        # Get columns
+        cursor = conn.execute(f"PRAGMA table_info([{table_name}])")
+        columns = [row["name"] for row in cursor.fetchall()]
+        # Get total count
+        total = conn.execute(f"SELECT COUNT(*) as c FROM [{table_name}]").fetchone()["c"]
+        # Get rows
+        rows = conn.execute(f"SELECT * FROM [{table_name}] LIMIT {per_page} OFFSET {offset}").fetchall()
+        conn.close()
+    except Exception as exc:
+        return HTMLResponse(_page("错误", f"<p style='color:#f87171'>❌ 查询失败: {exc}</p>"))
+
+    total_pages = (total + per_page - 1) // per_page
+
+    # Build table HTML
+    thead = "".join(f"<th>{html_mod.escape(c)}</th>" for c in columns)
+    tbody = ""
+    for row in rows:
+        cells = ""
+        for c in columns:
+            val = row[c]
+            cell_str = html_mod.escape(str(val) if val is not None else "NULL")
+            if len(cell_str) > 100:
+                cell_str = cell_str[:100] + "…"
+            cells += f"<td>{cell_str}</td>"
+        tbody += f"<tr>{cells}</tr>"
+
+    # Pagination
+    pagination = '<div class="db-pagination">'
+    if page > 1:
+        pagination += f'<a href="/admin/database/{db_id}/{table_name}?page={page-1}">← 上一页</a>'
+    pagination += f'<span>第 {page}/{total_pages} 页 · 共 {total} 行</span>'
+    if page < total_pages:
+        pagination += f'<a href="/admin/database/{db_id}/{table_name}?page={page+1}">下一页 →</a>'
+    pagination += '</div>'
+
+    body = f"""
+    <div class="section-header">
+        <h2>📋 {table_name}</h2>
+        <a href="/admin/database" class="back-link">← 返回数据库列表</a>
+    </div>
+    <p style="color:#94a3b8;font-size:.8rem;margin-bottom:12px">🗄️ {db_info['label']} · {total} 行</p>
+    <style>
+    .db-table-wrap{{overflow-x:auto;background:rgba(30,41,59,.7);border-radius:10px;border:1px solid rgba(148,163,184,.08)}}
+    .db-table{{width:100%;border-collapse:collapse;font-size:.75rem}}
+    .db-table th{{background:rgba(99,102,241,.08);color:#a5b4fc;padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;border-bottom:1px solid rgba(148,163,184,.1)}}
+    .db-table td{{padding:6px 10px;border-bottom:1px solid rgba(148,163,184,.04);color:#cbd5e1;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+    .db-table tr:hover td{{background:rgba(99,102,241,.03)}}
+    .db-pagination{{display:flex;justify-content:center;align-items:center;gap:16px;padding:12px;color:#94a3b8;font-size:.8rem}}
+    .db-pagination a{{color:#6366f1;text-decoration:none}}
+    .db-pagination a:hover{{color:#a5b4fc}}
+    .back-link{{color:#94a3b8;text-decoration:none;font-size:.85rem}}
+    .back-link:hover{{color:#e2e8f0}}
+    .section-header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}}
+    </style>
+    <div class="db-table-wrap">
+        <table class="db-table">
+            <thead><tr>{thead}</tr></thead>
+            <tbody>{tbody}</tbody>
+        </table>
+    </div>
+    {pagination}
+    """
+    return HTMLResponse(_page(f"表: {table_name}", body))

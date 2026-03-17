@@ -34,6 +34,160 @@ def _llm_provider() -> str:
     return "mock"
 
 
+# ── Per-feature provider configuration ──────────────────
+
+PROVIDER_CAPABILITIES: dict[str, dict] = {
+    "gemini": {
+        "name": "Google Gemini",
+        "models": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"],
+        "default_model": "gemini-2.5-flash",
+        "env_key": "GEMINI_API_KEY",
+        "env_model": "GEMINI_MODEL",
+        "json": True, "stream": True, "vision": True, "schema": True,
+    },
+    "openai": {
+        "name": "OpenAI (ChatGPT)",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+        "default_model": "gpt-4o-mini",
+        "env_key": "OPENAI_API_KEY",
+        "env_model": "OPENAI_MODEL",
+        "json": True, "stream": True, "vision": False, "schema": True,
+    },
+    "anthropic": {
+        "name": "Anthropic (Claude)",
+        "models": ["claude-3-7-sonnet-20250219", "claude-3-5-haiku-20241022", "claude-3-5-sonnet-20241022"],
+        "default_model": "claude-3-7-sonnet-20250219",
+        "env_key": "ANTHROPIC_API_KEY",
+        "env_model": "ANTHROPIC_MODEL",
+        "json": True, "stream": True, "vision": True, "schema": False,
+    },
+    "qwen": {
+        "name": "通义千问 (Qwen)",
+        "models": ["qwen-max", "qwen-plus", "qwen-turbo", "qwen-vl-max"],
+        "default_model": "qwen-max",
+        "env_key": "QWEN_API_KEY",
+        "env_model": "QWEN_MODEL",
+        "json": True, "stream": False, "vision": True, "schema": False,
+    },
+    "deepseek": {
+        "name": "DeepSeek",
+        "models": ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"],
+        "default_model": "deepseek-chat",
+        "env_key": "DEEPSEEK_API_KEY",
+        "env_model": "DEEPSEEK_MODEL",
+        "json": True, "stream": True, "vision": False, "schema": False,
+    },
+    "zhipu": {
+        "name": "智谱AI (GLM)",
+        "models": ["glm-4-plus", "glm-4", "glm-4v-plus", "glm-4v"],
+        "default_model": "glm-4-plus",
+        "env_key": "ZHIPU_API_KEY",
+        "env_model": "ZHIPU_MODEL",
+        "json": True, "stream": True, "vision": True, "schema": False,
+    },
+    "kimi": {
+        "name": "Kimi (月之暗面)",
+        "models": ["moonshot-v1-128k", "moonshot-v1-32k", "moonshot-v1-8k"],
+        "default_model": "moonshot-v1-32k",
+        "env_key": "KIMI_API_KEY",
+        "env_model": "KIMI_MODEL",
+        "json": True, "stream": True, "vision": False, "schema": False,
+    },
+}
+
+# What capability each feature requires
+FEATURE_REQUIRED_CAPS: dict[str, list[str]] = {
+    "topic_generate":  ["json"],
+    "article_analyze":  ["json"],
+    "translation":      ["json"],
+    "multimodal":       ["json", "vision"],
+    "paper_ai":         ["stream"],
+    "vocab_import":     ["json"],  # vision is optional for vocab
+}
+
+_FEATURE_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "feature_providers.json")
+
+
+def _load_feature_providers() -> dict[str, str]:
+    """Load per-feature provider overrides from JSON config."""
+    try:
+        with open(_FEATURE_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_feature_providers(mapping: dict[str, str]) -> None:
+    """Persist per-feature provider overrides to JSON config."""
+    with open(_FEATURE_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(mapping, f, indent=2, ensure_ascii=False)
+
+
+def get_feature_provider(feature_id: str) -> str:
+    """Get the provider for a specific feature (override or global default)."""
+    overrides = _load_feature_providers()
+    if feature_id in overrides and overrides[feature_id]:
+        provider = overrides[feature_id]
+        caps = PROVIDER_CAPABILITIES.get(provider, {})
+        env_key = caps.get("env_key", "")
+        if env_key and _env(env_key):
+            return provider
+    return _llm_provider()
+
+
+def set_feature_provider(feature_id: str, provider: str) -> bool:
+    """Set provider for a feature. Returns True if compatible."""
+    if provider and provider != "default":
+        caps = PROVIDER_CAPABILITIES.get(provider, {})
+        required = FEATURE_REQUIRED_CAPS.get(feature_id, ["json"])
+        for cap in required:
+            if not caps.get(cap, False):
+                return False
+    mapping = _load_feature_providers()
+    if provider == "default" or provider == "":
+        mapping.pop(feature_id, None)
+    else:
+        mapping[feature_id] = provider
+    _save_feature_providers(mapping)
+    return True
+
+
+def get_compatible_providers(feature_id: str) -> list[dict]:
+    """Return list of providers compatible with a feature, with availability info."""
+    required = FEATURE_REQUIRED_CAPS.get(feature_id, ["json"])
+    result = []
+    for pid, caps in PROVIDER_CAPABILITIES.items():
+        compatible = all(caps.get(cap, False) for cap in required)
+        env_key = caps.get("env_key", "")
+        has_key = bool(_env(env_key)) if env_key else False
+        result.append({
+            "id": pid,
+            "name": caps.get("name", pid),
+            "models": caps.get("models", []),
+            "default_model": caps.get("default_model", ""),
+            "compatible": compatible,
+            "has_key": has_key,
+            "available": compatible and has_key,
+        })
+    return result
+
+
+def get_all_feature_assignments() -> dict[str, dict]:
+    """Get current provider assignment for all features."""
+    overrides = _load_feature_providers()
+    default = _llm_provider()
+    assignments = {}
+    for fid in FEATURE_REQUIRED_CAPS:
+        provider = overrides.get(fid, "") or default
+        is_override = fid in overrides and overrides[fid]
+        assignments[fid] = {
+            "provider": provider,
+            "is_override": is_override,
+            "is_default": not is_override,
+        }
+    return assignments
+
+
 def _clean_json_text(content: str) -> str:
     """Robustly clean LLM text output into parseable JSON."""
     import re
@@ -593,9 +747,9 @@ async def mock_claude_json(system_prompt: str, user_prompt: str) -> dict:
     }
 
 
-async def call_claude_stream(system_prompt: str, user_prompt: str, max_tokens: int = 4000):
+async def call_claude_stream(system_prompt: str, user_prompt: str, max_tokens: int = 4000, feature_id: str = ""):
     """Yield text chunks from the LLM as a generator (for StreamingResponse)."""
-    provider = _llm_provider()
+    provider = get_feature_provider(feature_id) if feature_id else _llm_provider()
 
     if provider == "mock":
         raise RuntimeError("AI 服务未配置：当前为 Mock 模式，请在管理后台配置真实的 API Key。")
@@ -852,6 +1006,7 @@ async def call_llm_with_schema(
     user_prompt: str,
     response_schema: dict,
     max_tokens: int = 4000,
+    feature_id: str = "",
 ) -> dict:
     """
     Schema-aware LLM call — used by PromptEngine.
@@ -860,7 +1015,7 @@ async def call_llm_with_schema(
     - OpenAI: uses Structured Outputs (json_schema response_format)
     - Qwen/Anthropic/Mock: falls back to existing JSON mode + _clean_json_text
     """
-    provider = _llm_provider()
+    provider = get_feature_provider(feature_id) if feature_id else _llm_provider()
     try:
         if provider == "gemini":
             return await _call_gemini_with_schema(
@@ -883,8 +1038,8 @@ async def call_llm_with_schema(
         raise RuntimeError(f"AI 调用失败 ({provider}): {exc}") from exc
 
 
-async def call_claude_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> dict:
-    provider = _llm_provider()
+async def call_claude_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000, feature_id: str = "") -> dict:
+    provider = get_feature_provider(feature_id) if feature_id else _llm_provider()
     try:
         if provider == "gemini":
             return await _call_gemini_json(system_prompt, user_prompt, max_tokens=max_tokens)
@@ -903,9 +1058,9 @@ async def call_claude_json(system_prompt: str, user_prompt: str, max_tokens: int
 
 
 async def call_claude_vision_json(
-    system_prompt: str, user_prompt: str, base64_image: str, media_type: str, max_tokens: int = 4000
+    system_prompt: str, user_prompt: str, base64_image: str, media_type: str, max_tokens: int = 4000, feature_id: str = ""
 ) -> dict:
-    provider = _llm_provider()
+    provider = get_feature_provider(feature_id) if feature_id else _llm_provider()
     try:
         if provider == "gemini":
             return await _call_gemini_vision_json(
