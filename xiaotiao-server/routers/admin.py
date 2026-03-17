@@ -923,7 +923,7 @@ def admin_dashboard(request: Request):
             }});
             const data = await resp.json();
             if (data.ok) {{
-                result.innerHTML = '<span class="ok">✅ 配置已保存。重启服务后生效。</span>';
+                result.innerHTML = '<span class="ok">✅ 配置已保存并已生效！已更新: ' + (data.updated||[]).join(', ') + '</span>';
             }} else {{
                 result.innerHTML = '<span class="err">❌ ' + (data.error || '保存失败') + '</span>';
             }}
@@ -1250,6 +1250,16 @@ async def save_config(request: Request):
 
     # Write back
     ENV_PATH.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+
+    # Reload env into running process so changes take effect immediately
+    for k, v in updates.items():
+        os.environ[k] = v
+    # Re-import dotenv to refresh all values
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(ENV_PATH, override=True)
+    except ImportError:
+        pass  # dotenv not available, manual os.environ update above is sufficient
 
     return JSONResponse({"ok": True, "updated": list(updates.keys())})
 
