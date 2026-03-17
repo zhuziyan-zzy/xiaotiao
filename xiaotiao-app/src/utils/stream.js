@@ -17,15 +17,36 @@ const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
  */
 export async function streamAI(endpoint, payload, onChunk, options = {}) {
   const url = `${API_BASE}${endpoint}`;
-  const response = await authFetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: options.signal
-  });
+  
+  // Create AbortController for timeout
+  const controller = new AbortController();
+  const timeoutMs = options.timeout || 90000; // 90s default
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  // Merge signals if user provided one
+  const signal = options.signal 
+    ? (() => { options.signal.addEventListener('abort', () => controller.abort()); return controller.signal; })()
+    : controller.signal;
+
+  let response;
+  try {
+    response = await authFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e.name === 'AbortError') {
+      throw new Error('AI 响应超时，请检查服务器 LLM API 配置是否正确（需要在 .env 中配置 QWEN_API_KEY 或 GEMINI_API_KEY）');
+    }
+    throw new Error(`网络错误: ${e.message}`);
+  }
 
   if (!response.ok) {
-    let errorMsg = `HTTP ${response.status}`;
+    clearTimeout(timeoutId);
+    let errorMsg = `服务器错误 (${response.status})`;
     try {
       const errData = await response.json();
       errorMsg = errData.detail || errorMsg;
@@ -37,12 +58,16 @@ export async function streamAI(endpoint, payload, onChunk, options = {}) {
   const decoder = new TextDecoder();
   let result = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    result += chunk;
-    if (onChunk) onChunk(result);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      result += chunk;
+      if (onChunk) onChunk(result);
+    }
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   return result;

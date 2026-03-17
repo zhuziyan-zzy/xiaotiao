@@ -152,6 +152,14 @@ function renderHeader(paper) {
   const header = document.getElementById('paper-header');
   const authors = paper.authors ? (() => { try { return JSON.parse(paper.authors); } catch { return []; } })() : [];
 
+  // Reading progress
+  const pagesRead = paper.pages_read || 0;
+  const totalPages = paper.total_pages || 0;
+  const readStatus = paper.read_status || 'unread';
+  const readPct = totalPages > 0 ? Math.round(pagesRead / totalPages * 100) : 0;
+  const statusColors = { read: '#34c759', reading: '#ff9500', unread: 'var(--text-muted)' };
+  const statusLabels = { read: '已读', reading: '阅读中', unread: '未读' };
+
   header.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
       <div style="flex:1;">
@@ -163,7 +171,14 @@ function renderHeader(paper) {
           <span style="color:var(--text-muted);font-size:0.85rem;">${paper.source || ''}</span>
           ${paper.arxiv_id ? `<span style="background:rgba(88,86,214,0.1);color:var(--accent);padding:2px 8px;border-radius:8px;font-size:0.8rem;">arXiv: ${paper.arxiv_id}</span>` : ''}
           <span style="color:var(--text-muted);font-size:0.85rem;">${new Date(paper.created_at).toLocaleDateString('zh-CN')}</span>
+          <span style="background:${statusColors[readStatus]}22;color:${statusColors[readStatus]};padding:2px 8px;border-radius:8px;font-size:0.8rem;font-weight:500;">${statusLabels[readStatus] || readStatus}</span>
+          ${totalPages > 0 ? `<span style="color:var(--text-muted);font-size:0.8rem;">${pagesRead}/${totalPages} 页 (${readPct}%)</span>` : ''}
         </div>
+        ${totalPages > 0 ? `
+          <div style="margin-top:8px;height:4px;background:rgba(0,0,0,0.06);border-radius:2px;overflow:hidden;max-width:300px;">
+            <div style="height:100%;width:${readPct}%;background:linear-gradient(90deg,#f472b6,#a78bfa);border-radius:2px;transition:width 0.3s;"></div>
+          </div>
+        ` : ''}
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0;">
         <button class="btn btn--secondary" onclick="window.__toggleFav('${paper.id}');location.reload();" style="padding:8px 12px;">

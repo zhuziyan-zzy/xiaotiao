@@ -160,8 +160,7 @@ async def search_arxiv_for_topic(topic_id: str, title: str, max_results: int = 1
             "&sortBy=submittedDate&sortOrder=descending"
         )
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            await asyncio.sleep(3)  # Respect ArXiv rate limits
+        async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(api_url)
             resp.raise_for_status()
 
@@ -661,7 +660,7 @@ SOURCE_SEARCH_MAP = {
 
 
 async def search_topic_all_sources(topic_id: str, title: str, sources: List[str] = None, db_path: str = None):
-    """Search all selected sources for a topic, tracking progress."""
+    """Search all sources in PARALLEL with progress tracking."""
     if not sources:
         sources = ["arxiv"]
 
@@ -673,36 +672,38 @@ async def search_topic_all_sources(topic_id: str, title: str, sources: List[str]
     conn.execute("CREATE TABLE IF NOT EXISTS search_progress (topic_id TEXT PRIMARY KEY, total INTEGER, completed INTEGER, current_source TEXT, status TEXT, updated_at TEXT)")
     now = datetime.utcnow().isoformat()
     conn.execute("INSERT OR REPLACE INTO search_progress (topic_id, total, completed, current_source, status, updated_at) VALUES (?,?,?,?,?,?)",
-                 (topic_id, len(sources), 0, sources[0] if sources else '', 'searching', now))
+                 (topic_id, len(sources), 0, ','.join(sources), 'searching', now))
     conn.commit()
     conn.close()
 
-    completed = 0
-    for source in sources:
+    completed_count = {'n': 0}  # mutable counter for closure
+
+    async def _run_source(source):
         fn = SOURCE_SEARCH_MAP.get(source)
-        if fn:
-            # Update current source
-            conn = sqlite3.connect(target_db)
-            conn.execute("UPDATE search_progress SET current_source=?, updated_at=? WHERE topic_id=?",
-                         (source, datetime.utcnow().isoformat(), topic_id))
-            conn.commit()
-            conn.close()
+        if not fn:
+            return
+        try:
+            await fn(topic_id, title, db_path=db_path)
+        except Exception as e:
+            print(f"[tracker] Source {source} failed: {e}")
+        # Update progress after each source completes
+        completed_count['n'] += 1
+        try:
+            c = sqlite3.connect(target_db)
+            c.execute("UPDATE search_progress SET completed=?, current_source=?, updated_at=? WHERE topic_id=?",
+                      (completed_count['n'], source + ' ✓', datetime.utcnow().isoformat(), topic_id))
+            c.commit()
+            c.close()
+        except Exception:
+            pass
 
-            try:
-                await fn(topic_id, title, db_path=db_path)
-            except Exception as e:
-                print(f"[tracker] Source {source} failed: {e}")
-
-            completed += 1
-            conn = sqlite3.connect(target_db)
-            conn.execute("UPDATE search_progress SET completed=?, updated_at=? WHERE topic_id=?",
-                         (completed, datetime.utcnow().isoformat(), topic_id))
-            conn.commit()
-            conn.close()
+    # Run all sources in parallel
+    tasks = [_run_source(s) for s in sources]
+    await asyncio.gather(*tasks, return_exceptions=True)
 
     # Mark as done
     conn = sqlite3.connect(target_db)
-    conn.execute("UPDATE search_progress SET status='done', current_source='', updated_at=? WHERE topic_id=?",
-                 (datetime.utcnow().isoformat(), topic_id))
+    conn.execute("UPDATE search_progress SET status='done', completed=?, current_source='', updated_at=? WHERE topic_id=?",
+                 (len(sources), datetime.utcnow().isoformat(), topic_id))
     conn.commit()
     conn.close()

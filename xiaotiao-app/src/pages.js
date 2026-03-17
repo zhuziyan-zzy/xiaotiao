@@ -11,6 +11,7 @@ import {
   exportArticleWord
 } from './api.js';
 import { escapeHtml, sanitizeHtml } from './utils/sanitize.js';
+import { getTaskManager } from './components/task_manager.js';
 
 // Confidence hint Chinese labels
 const CONFIDENCE_LABELS = { high: '高', medium: '中', low: '低' };
@@ -566,8 +567,14 @@ export function initTopicExplorer() {
     const progressEl = document.getElementById('topic-gen-progress');
     const progress = startSimulatedProgress(progressEl, '正在调用 AI 生成...');
 
+    const taskId = `topic-${Date.now()}`;
+    const tm = getTaskManager();
+    tm.addTask(taskId, `生成: ${topicLabel}`, 'topic');
+    tm.updateTask(taskId, 10, '调用 AI 生成中...');
+
     try {
       const data = await generateTopic(payload);
+      tm.updateTask(taskId, 100, '生成完成 ✓');
       progress.complete();
 
       document.getElementById('topic-confidence').textContent = confidenceLabel(data.confidence_hint);
@@ -694,6 +701,7 @@ export function initTopicExplorer() {
           <div class="result-empty__text">生成失败，请重试<br><span style="color:#ef4444;">${err.message}</span><br><br><span style="font-size:0.85rem;color:var(--text-muted);">提示：请检查 LLM 服务配置是否正确，或稍后重试。</span></div>
         </div>
       `;
+      tm.removeTask(taskId);
     }
 
     minimizeConfigBtn.disabled = false;
