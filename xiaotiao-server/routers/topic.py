@@ -3,6 +3,7 @@ import json
 import uuid
 import io
 from datetime import datetime
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from schemas import TopicGenerateRequest, TopicGenerateResponse
@@ -245,7 +246,10 @@ def export_article_word(article_id: str, db=Depends(get_db)):
         doc.add_heading(f"📚 关键术语 ({len(terms)})", level=1)
         table = doc.add_table(rows=1, cols=3)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = "Light Grid Accent 1"
+        try:
+            table.style = "Table Grid"
+        except KeyError:
+            pass
         hdr = table.rows[0].cells
         hdr[0].text = "术语"
         hdr[1].text = "中文释义"
@@ -262,7 +266,10 @@ def export_article_word(article_id: str, db=Depends(get_db)):
         doc.add_heading(f"🆕 新词 ({len(new_words)})", level=1)
         table = doc.add_table(rows=1, cols=3)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = "Light Grid Accent 1"
+        try:
+            table.style = "Table Grid"
+        except KeyError:
+            pass
         hdr = table.rows[0].cells
         hdr[0].text = "单词"
         hdr[1].text = "中文释义"
@@ -295,9 +302,10 @@ def export_article_word(article_id: str, db=Depends(get_db)):
 
     safe_topic = re.sub(r'[\\/:*?"<>|\s]+', "_", row["topic"])[:30]
     filename = f"topic_{safe_topic}_{row['created_at'][:10]}.docx"
+    encoded_filename = quote(filename)
 
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
     )
