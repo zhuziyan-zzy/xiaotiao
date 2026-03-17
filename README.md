@@ -7,7 +7,7 @@
 ## 本地开发
 
 ```bash
-cd /Users/mac/学习/小挑/项目
+# 在项目根目录
 ./scripts/dev.sh
 ```
 
@@ -18,7 +18,7 @@ cd /Users/mac/学习/小挑/项目
 前端单独构建：
 
 ```bash
-cd /Users/mac/学习/小挑/项目/xiaotiao-app
+cd xiaotiao-app
 npm run build
 ```
 
@@ -57,7 +57,6 @@ git push -u origin feat/xxx
 已提供脚本：
 
 ```bash
-cd /Users/mac/学习/小挑/项目
 ./scripts/setup_github.sh <repo-name> [public|private]
 ```
 
@@ -109,4 +108,15 @@ Gemini 示例：
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=你的key
 GEMINI_MODEL=gemini-2.5-flash
+```
+
+## 云端部署
+
+详见 [DEPLOYMENT_TODO.md](DEPLOYMENT_TODO.md) 和 `deploy/` 目录：
+
+```bash
+# 首次部署
+sudo bash deploy/setup.sh
+# 后续更新
+bash deploy/deploy.sh
 ```

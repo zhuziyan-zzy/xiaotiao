@@ -33,12 +33,22 @@ async function requestJSON({ endpoint, method = 'POST', payload, timeoutMs, retr
             clearTimeout(timeoutId);
 
             if (!response.ok) {
-                let errorMsg = `HTTP Error ${response.status}`;
+                const status = response.status;
+                let errorMsg = `HTTP Error ${status}`;
                 try {
                     const errData = await response.json();
                     errorMsg = errData.detail || errorMsg;
                 } catch (_e) {}
-                throw new Error(errorMsg);
+
+                // E-1: Differentiated error messages
+                if (status === 422) {
+                    throw Object.assign(new Error(errorMsg), { status, retryable: false });
+                } else if (status === 429) {
+                    throw Object.assign(new Error('请求过于频繁，请稍后再试'), { status, retryable: true });
+                } else if (status >= 500) {
+                    throw Object.assign(new Error(`服务器错误 (${status})：${errorMsg}`), { status, retryable: true });
+                }
+                throw Object.assign(new Error(errorMsg), { status, retryable: false });
             }
 
             return await response.json();

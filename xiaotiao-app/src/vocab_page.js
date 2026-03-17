@@ -436,9 +436,9 @@ async function loadVocabList() {
             tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-muted);">该分类暂无生词。</td></tr>';
         } else {
             tbody.innerHTML = data.items.map(item => `
-                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.2s;">
+                <tr style="border-bottom:1px solid rgba(0,0,0,0.04);transition:background 0.2s;">
                     <td style="padding:14px 20px;">
-                        <span style="font-weight:500;font-size:1.05rem;color:#fff;">${escapeHtml(item.word)}</span>
+                        <span style="font-weight:500;font-size:1.05rem;color:var(--text-primary);">${escapeHtml(item.word)}</span>
                         <span style="color:var(--text-muted);font-size:0.8rem;margin-left:6px;">${item.part_of_speech || ''}</span>
                         ${item.is_easily_forgotten ? '<span style="margin-left:6px;font-size:0.7rem;padding:2px 6px;border-radius:6px;background:rgba(239,68,68,0.15);color:#ef4444;font-weight:600;">易忘</span>' : ''}
                         ${item.duplicate_count > 0 ? `<span style="margin-left:4px;font-size:0.65rem;color:var(--text-muted);">×${item.duplicate_count + 1}</span>` : ''}
@@ -447,7 +447,7 @@ async function loadVocabList() {
                         ${item.definition_zh || '-'}
                     </td>
                     <td style="padding:14px 20px;">
-                        <span style="background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:10px;font-size:0.75rem;color:var(--text-muted);">
+                        <span style="background:var(--glass-bg-input);padding:3px 8px;border-radius:10px;font-size:0.75rem;color:var(--text-muted);">
                             ${item.domain}
                         </span>
                     </td>
@@ -585,11 +585,11 @@ async function uploadFileToServer(file) {
 function showImportPreview(words) {
     const list = document.getElementById('import-preview-list');
     list.innerHTML = words.map((w, i) => `
-        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.05);${i % 2 === 0 ? 'background:rgba(255,255,255,0.02);' : ''}">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(0,0,0,0.04);${i % 2 === 0 ? 'background:var(--glass-bg);' : ''}">
             <input type="checkbox" checked data-index="${i}" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;" onchange="window.__updateImportCount()">
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
-                    <span style="font-weight:600;color:#fff;font-size:1.05rem;">${escapeHtml(w.word)}</span>
+                    <span style="font-weight:600;color:var(--text-primary);font-size:1.05rem;">${escapeHtml(w.word)}</span>
                     <span style="color:var(--text-muted);font-size:0.8rem;">${escapeHtml(w.part_of_speech || '')}</span>
                 </div>
                 <div style="color:var(--text-muted);font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">

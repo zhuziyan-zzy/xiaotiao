@@ -114,6 +114,27 @@ async def auth_guard(request: Request, call_next):
     request.state.db_path = get_user_db_path(user["id"])
     return await call_next(request)
 
+
+# E-5: Request logging with content masking — never log full user text
+import logging
+_req_logger = logging.getLogger("xiaotiao.requests")
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    path = request.url.path
+    method = request.method
+    # Skip noisy health/static paths
+    if path in ("/health",) or path.startswith("/docs"):
+        return await call_next(request)
+    # Log sanitized info
+    content_length = request.headers.get("content-length", "0")
+    _req_logger.info(
+        "%s %s (content-length: %s)",
+        method, path, content_length
+    )
+    response = await call_next(request)
+    return response
+
 @app.get(
     "/health",
     summary="健康检查",

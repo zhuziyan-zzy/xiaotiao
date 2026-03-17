@@ -1,5 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional
+import re
 
 # --- Topic Explorer ---
 class TopicGenerateRequest(BaseModel):
@@ -7,11 +8,22 @@ class TopicGenerateRequest(BaseModel):
     domains: List[str]
     level: str = "intermediate"
     article_style_id: str = "economist"
-    article_length: int = 400
-    db_word_count: int = 8
-    new_word_count: int = 5
+    article_length: int = Field(default=400, ge=100, le=2000)
+    db_word_count: int = Field(default=8, ge=0, le=30)
+    new_word_count: int = Field(default=5, ge=0, le=20)
     target_range_id: str = "cet6"
     db_words: List[str] = Field(default_factory=list)
+
+    @field_validator('topics')
+    @classmethod
+    def validate_topics(cls, v):
+        if not v or all(not t.strip() for t in v):
+            raise ValueError('至少需要一个有效的主题关键词')
+        for t in v:
+            if len(t) > 200:
+                raise ValueError('单个主题关键词不能超过 200 字符')
+        # E-4: strip HTML tags from topic input
+        return [re.sub(r'<[^>]+>', '', t).strip() for t in v]
 
 class NewWord(BaseModel):
     word: str = Field(description="The new vocabulary word")
@@ -33,10 +45,18 @@ class TopicGenerateResponse(BaseModel):
 
 # --- Article Lab ---
 class ArticleAnalyzeRequest(BaseModel):
-    source_text: str
+    source_text: str = Field(..., max_length=50000)
     analysis_mode: str = "plain"  # plain, legal_focus
     grounded: bool = False
-    top_k: int = 4
+    top_k: int = Field(default=4, ge=1, le=10)
+
+    @field_validator('source_text')
+    @classmethod
+    def validate_source_text(cls, v):
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError('输入文本不能为空')
+        return stripped
 
 class ParagraphAnalysis(BaseModel):
     original: str = Field(description="Original English paragraph text")
@@ -79,10 +99,18 @@ class RagQueryResponse(BaseModel):
 
 # --- Translation Studio ---
 class TranslationRequest(BaseModel):
-    source_text: str
+    source_text: str = Field(..., max_length=10000)
     direction: str = "zh_to_en" # zh_to_en, en_to_zh
     style: List[str] = Field(default_factory=lambda: ["literal", "legal", "plain"])
     user_translation: Optional[str] = ""
+
+    @field_validator('source_text')
+    @classmethod
+    def validate_source_text(cls, v):
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError('输入文本不能为空')
+        return stripped
 
 class TranslationVariant(BaseModel):
     style: str = Field(description="Translation style: literal, legal, or plain")

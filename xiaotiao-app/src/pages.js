@@ -219,7 +219,7 @@ export function renderTopicExplorer() {
             <label class="checkbox-label"><input type="checkbox" value="ip-law"><span></span> 知识产权法</label>
           </div>
           <div class="topic-domain-actions">
-            <input type="text" class="custom-domain-field" id="topic-custom-domain" placeholder="在此输入自定义方向并回车...">
+            <input type="text" class="form-input custom-domain-field" id="topic-custom-domain" placeholder="在此输入自定义方向并回车...">
             <button class="btn btn--secondary topic-domain-add-btn" id="btn-add-domain">添加方向</button>
           </div>
         </div>
@@ -1009,9 +1009,12 @@ export function initArticleLab() {
       resultArea.innerHTML = `
         <div class="result-empty">
           <div class="result-empty__icon">❌</div>
-          <div class="result-empty__text">解读失败，请重试<br>${err.message}</div>
+          <div class="result-empty__text">解读失败<br><span style="color:#ef4444;">${err.message}</span><br><br><span style="font-size:0.85rem;color:var(--text-muted);">提示：请检查网络连接或 LLM 服务配置。</span></div>
+          <button class="btn btn--article btn--sm" id="btn-article-retry" style="margin-top:16px;">🔄 重新解读</button>
         </div>
       `;
+      const retryBtn = document.getElementById('btn-article-retry');
+      if (retryBtn) retryBtn.addEventListener('click', () => runArticleAnalysis(lastArticlePayload, lastArticleWords));
     }
 
     submitBtn.disabled = false;
@@ -1328,9 +1331,12 @@ export function initTranslationStudio() {
       resultArea.innerHTML = `
         <div class="result-empty">
           <div class="result-empty__icon">❌</div>
-          <div class="result-empty__text">翻译失败，请重试<br>${err.message}</div>
+          <div class="result-empty__text">翻译失败<br><span style="color:#ef4444;">${err.message}</span><br><br><span style="font-size:0.85rem;color:var(--text-muted);">提示：请检查网络连接或 LLM 服务配置。</span></div>
+          <button class="btn btn--translation btn--sm" id="btn-translation-retry" style="margin-top:16px;">🔄 重新翻译</button>
         </div>
       `;
+      const retryBtn = document.getElementById('btn-translation-retry');
+      if (retryBtn) retryBtn.addEventListener('click', () => runTranslationRequest(lastTranslationPayload));
     }
 
     submitBtn.disabled = false;
