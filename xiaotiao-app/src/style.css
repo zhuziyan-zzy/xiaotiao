@@ -2505,7 +2505,7 @@ textarea.form-input {
 .textLayer {
   position: absolute;
   inset: 0;
-  overflow: clip;
+  overflow: hidden;
   opacity: 1;
   line-height: 1;
   text-size-adjust: none;
@@ -2515,6 +2515,7 @@ textarea.form-input {
   color: transparent;
   user-select: text;
   pointer-events: auto;
+  font-size: 1px;  /* Critical: PDF.js uses this for transform calculations */
 }
 
 .textLayer :is(span, br) {
@@ -2523,6 +2524,7 @@ textarea.form-input {
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
+  pointer-events: all;
 }
 
 .textLayer > :not(.markedContent),
@@ -2531,8 +2533,30 @@ textarea.form-input {
 }
 
 .textLayer ::selection {
-  background: rgba(255, 255, 0, 0.45);
+  background: rgba(0, 120, 255, 0.3);
   color: transparent;
+}
+
+/* Visual highlight for annotated text */
+.textLayer .pdf-highlight {
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+  transition: background-color 0.2s ease;
+}
+
+/* Highlight color picker button hover */
+.hl-color-btn:hover {
+  transform: scale(1.2);
+  transition: transform 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.hl-color-btn {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* PDF page wrapper */
+.pdf-page-wrapper {
+  box-sizing: border-box;
 }
 
 .progress-bar {

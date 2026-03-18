@@ -55,6 +55,18 @@ export function renderPaperReaderPage(params) {
         </div>
       </div>
 
+      <!-- Highlight Color Picker -->
+      <div id="highlight-color-picker" style="display:none;position:fixed;z-index:300;background:var(--glass-bg-solid);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.1);border-radius:12px;padding:12px;box-shadow:var(--shadow-elevated);">
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">选择高亮颜色</div>
+        <div style="display:flex;gap:8px;">
+          <button class="hl-color-btn" data-hl-color="rgba(255,255,0,0.4)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(255,255,0,0.5);cursor:pointer;" title="黄色"></button>
+          <button class="hl-color-btn" data-hl-color="rgba(0,255,128,0.35)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(0,255,128,0.45);cursor:pointer;" title="绿色"></button>
+          <button class="hl-color-btn" data-hl-color="rgba(100,180,255,0.35)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(100,180,255,0.45);cursor:pointer;" title="蓝色"></button>
+          <button class="hl-color-btn" data-hl-color="rgba(255,130,180,0.35)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(255,130,180,0.45);cursor:pointer;" title="粉色"></button>
+          <button class="hl-color-btn" data-hl-color="rgba(255,180,50,0.35)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(255,180,50,0.45);cursor:pointer;" title="橙色"></button>
+        </div>
+      </div>
+
       <!-- Selection Result Popover -->
       <div id="selection-result" style="display:none;position:fixed;z-index:201;background:var(--glass-bg-solid);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.1);border-radius:12px;padding:16px;box-shadow:var(--shadow-elevated);max-width:400px;max-height:300px;overflow-y:auto;"></div>
     </div>
@@ -129,29 +141,38 @@ export async function initPaperReaderPage(params) {
     const container = document.getElementById('pdf-container');
     container.innerHTML = '';
 
+    // Use devicePixelRatio for HiDPI rendering (sharp text)
+    const pixelRatio = window.devicePixelRatio || 1;
+    const renderScale = currentScale * pixelRatio;
+
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
-      const viewport = page.getViewport({ scale: currentScale });
+      const cssViewport = page.getViewport({ scale: currentScale });
+      const renderViewport = page.getViewport({ scale: renderScale });
 
       const wrapper = document.createElement('div');
-      wrapper.style.cssText = `position:relative;margin-bottom:4px;width:${viewport.width}px;height:${viewport.height}px;`;
+      wrapper.className = 'pdf-page-wrapper';
+      wrapper.style.cssText = `position:relative;margin-bottom:8px;width:${cssViewport.width}px;height:${cssViewport.height}px;`;
       wrapper.dataset.pageNum = i;
 
       const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      canvas.style.cssText = 'display:block;background:white;box-shadow:0 2px 8px rgba(0,0,0,0.1);border-radius:4px;position:relative;z-index:1;';
+      // Canvas internal resolution = render scale (HiDPI)
+      canvas.width = renderViewport.width;
+      canvas.height = renderViewport.height;
+      // Canvas CSS size = CSS scale (display size)
+      canvas.style.cssText = `display:block;width:${cssViewport.width}px;height:${cssViewport.height}px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.12);border-radius:4px;position:relative;z-index:1;`;
 
       const textLayerDiv = document.createElement('div');
       textLayerDiv.className = 'textLayer';
-      textLayerDiv.style.cssText = `position:absolute;left:0;top:0;height:${viewport.height}px;width:${viewport.width}px;z-index:2;`;
+      // Use CSS inset:0 so textLayer matches wrapper exactly
+      textLayerDiv.style.cssText = `position:absolute;inset:0;z-index:2;overflow:hidden;`;
 
       wrapper.appendChild(canvas);
       wrapper.appendChild(textLayerDiv);
       container.appendChild(wrapper);
 
       const ctx = canvas.getContext('2d');
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
 
       try {
         const textContent = await page.getTextContent();
@@ -159,14 +180,14 @@ export async function initPaperReaderPage(params) {
           const textLayer = new pdfjsLib.TextLayer({
             textContentSource: textContent,
             container: textLayerDiv,
-            viewport
+            viewport: cssViewport,   // textLayer uses CSS viewport for positioning
           });
           await textLayer.render();
         } else if (pdfjsLib.renderTextLayer) {
           await pdfjsLib.renderTextLayer({
             textContent,
             container: textLayerDiv,
-            viewport
+            viewport: cssViewport,
           });
         }
       } catch (_e) {
@@ -322,20 +343,73 @@ export async function initPaperReaderPage(params) {
     lastSelectionText = selectedText;
 
     if (action === 'highlight') {
-      try {
-        await authFetch(`${API_BASE}/papers/${paperId}/annotations`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'highlight',
-            selected_text: selectedText,
-            page_number: null
-          })
-        });
-        window.showToast('已添加高亮', 'success');
-      } catch (e) {
-        window.showToast('添加失败', 'error');
+      // Show color picker near selection
+      const colorPicker = document.getElementById('highlight-color-picker');
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        colorPicker.style.left = `${rect.left}px`;
+        colorPicker.style.top = `${rect.bottom + 8}px`;
+      } else {
+        colorPicker.style.left = `${window.innerWidth / 2 - 100}px`;
+        colorPicker.style.top = `${window.innerHeight / 3}px`;
       }
+      colorPicker.style.display = 'block';
+
+      // Handle color selection
+      const handleColorClick = async (e) => {
+        const btn = e.target.closest('[data-hl-color]');
+        if (!btn) return;
+        const color = btn.dataset.hlColor;
+        colorPicker.style.display = 'none';
+        colorPicker.removeEventListener('click', handleColorClick);
+
+        // Apply visual highlight to textLayer spans
+        try {
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount > 0) {
+            const hlRange = sel.getRangeAt(0);
+            // Walk through all text nodes in the range and highlight their parent spans
+            const walker = document.createTreeWalker(hlRange.commonAncestorContainer, NodeFilter.SHOW_TEXT);
+            let node;
+            while (node = walker.nextNode()) {
+              if (hlRange.intersectsNode(node) && node.parentElement) {
+                const span = node.parentElement.closest('.textLayer span') || node.parentElement;
+                if (span && span.closest('.textLayer')) {
+                  span.style.backgroundColor = color;
+                  span.style.borderRadius = '2px';
+                  span.classList.add('pdf-highlight');
+                }
+              }
+            }
+          }
+
+          await authFetch(`${API_BASE}/papers/${paperId}/annotations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'highlight',
+              selected_text: selectedText,
+              color: color,
+              page_number: null
+            })
+          });
+          window.showToast('已添加高亮', 'success');
+        } catch (e) {
+          window.showToast('添加失败', 'error');
+        }
+      };
+      colorPicker.addEventListener('click', handleColorClick);
+
+      // Close color picker on outside click
+      const closeColorPicker = (e) => {
+        if (!colorPicker.contains(e.target)) {
+          colorPicker.style.display = 'none';
+          document.removeEventListener('mousedown', closeColorPicker);
+        }
+      };
+      setTimeout(() => document.addEventListener('mousedown', closeColorPicker), 100);
       return;
     }
 

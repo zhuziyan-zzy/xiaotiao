@@ -600,7 +600,7 @@ async def page_summary(paper_id: str, body: PageSummaryRequest):
         async for chunk in call_claude_stream(
             system_prompt,
             f"第 {body.page_number} 页内容：\n{body.page_text[:3000]}",
-            feature_id="paper_ai",
+            feature_id="paper_reader",
         ):
             yield chunk
 
