@@ -56,18 +56,6 @@ export function renderPaperReaderPage(params) {
         </div>
       </div>
 
-      <!-- Highlight Color Picker -->
-      <div id="highlight-color-picker" style="display:none;position:fixed;z-index:300;background:var(--glass-bg-solid);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.1);border-radius:12px;padding:12px;box-shadow:var(--shadow-elevated);">
-        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">选择高亮颜色</div>
-        <div style="display:flex;gap:8px;">
-          <button class="hl-color-btn" data-hl-color="rgba(255,255,0,0.4)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(255,255,0,0.5);cursor:pointer;" title="黄色"></button>
-          <button class="hl-color-btn" data-hl-color="rgba(0,255,128,0.35)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(0,255,128,0.45);cursor:pointer;" title="绿色"></button>
-          <button class="hl-color-btn" data-hl-color="rgba(100,180,255,0.35)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(100,180,255,0.45);cursor:pointer;" title="蓝色"></button>
-          <button class="hl-color-btn" data-hl-color="rgba(255,130,180,0.35)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(255,130,180,0.45);cursor:pointer;" title="粉色"></button>
-          <button class="hl-color-btn" data-hl-color="rgba(255,180,50,0.35)" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:rgba(255,180,50,0.45);cursor:pointer;" title="橙色"></button>
-        </div>
-      </div>
-
       <!-- Selection Result Popover -->
       <div id="selection-result" style="display:none;position:fixed;z-index:201;background:var(--glass-bg-solid);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.1);border-radius:12px;padding:16px;box-shadow:var(--shadow-elevated);max-width:400px;max-height:300px;overflow-y:auto;"></div>
     </div>
@@ -84,6 +72,7 @@ export async function initPaperReaderPage(params) {
   let observer = null;
   let pdfjsLibInstance = null;
   let lastReaderQuestion = '';
+  let isChatBusy = false;
 
   // Load paper info
   try {
@@ -111,7 +100,6 @@ export async function initPaperReaderPage(params) {
     let pdfData;
 
     if (contentType && contentType.includes('application/json')) {
-      // Server returned a URL instead of binary
       const jsonData = await pdfRes.json();
       if (jsonData.pdf_url) {
         const proxyRes = await fetch(jsonData.pdf_url);
@@ -157,15 +145,13 @@ export async function initPaperReaderPage(params) {
       wrapper.dataset.pageNum = i;
 
       const canvas = document.createElement('canvas');
-      // Canvas internal resolution = render scale (HiDPI)
       canvas.width = renderViewport.width;
       canvas.height = renderViewport.height;
-      // Canvas CSS size = CSS scale (display size)
       canvas.style.cssText = `display:block;width:${cssViewport.width}px;height:${cssViewport.height}px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.12);border-radius:4px;`;
 
       const textLayerDiv = document.createElement('div');
       textLayerDiv.className = 'textLayer';
-      // pdfjs v5 requires --total-scale-factor CSS variable for text positioning
+      // pdfjs v5 requires --total-scale-factor for text positioning
       textLayerDiv.style.cssText = `position:absolute;inset:0;--total-scale-factor:${currentScale};`;
 
       wrapper.appendChild(canvas);
@@ -181,7 +167,7 @@ export async function initPaperReaderPage(params) {
           const textLayer = new pdfjsLib.TextLayer({
             textContentSource: textContent,
             container: textLayerDiv,
-            viewport: cssViewport,   // textLayer uses CSS viewport for positioning
+            viewport: cssViewport,
           });
           await textLayer.render();
         } else if (pdfjsLib.renderTextLayer) {
@@ -192,7 +178,7 @@ export async function initPaperReaderPage(params) {
           });
         }
       } catch (_e) {
-        // Ignore text layer rendering errors
+        console.warn('[Reader] TextLayer render error:', _e);
       }
     }
 
@@ -222,7 +208,6 @@ export async function initPaperReaderPage(params) {
 
           // Auto-generate summary for new pages
           if (!summariesGenerated.has(pageNum)) {
-            // NOTE: do NOT add to summariesGenerated here — let generatePageSummary manage it
             generatePageSummary(doc, pageNum, paperId);
           }
         }
@@ -233,18 +218,18 @@ export async function initPaperReaderPage(params) {
       observer.observe(el);
     });
 
-    // Store for cleanup
     window.__readerObserver = observer;
   }
 
   async function generatePageSummary(doc, pageNum, paperId, force = false) {
     if (!force && summariesGenerated.has(pageNum)) return;
-    summariesGenerated.add(pageNum);  // Mark as generated to prevent duplicate calls
+    summariesGenerated.add(pageNum);
+
     const page = await doc.getPage(pageNum);
     const textContent = await page.getTextContent();
     const text = textContent.items.map(item => item.str).join(' ');
 
-    if (text.trim().length < 50) return; // Skip nearly empty pages
+    if (text.trim().length < 50) return;
 
     const summariesContainer = document.getElementById('page-summaries');
 
@@ -303,8 +288,9 @@ export async function initPaperReaderPage(params) {
         if (target) target.innerHTML = renderMarkdown(accum);
       });
     } catch (e) {
+      console.error(`[Reader] Summary generation failed for page ${pageNum}:`, e);
       const target = document.getElementById(`summary-${pageNum}`);
-      if (target) target.innerHTML = `<span style="color:var(--text-muted);">概要生成失败</span>`;
+      if (target) target.innerHTML = `<span style="color:var(--text-muted);">概要生成失败: ${e.message}</span>`;
     }
   }
 
@@ -339,87 +325,104 @@ export async function initPaperReaderPage(params) {
   let lastSelectionAction = null;
   let lastSelectionText = '';
 
+  const HIGHLIGHT_COLORS = [
+    { name: '黄色', color: 'rgba(255,255,0,0.4)', bg: 'rgba(255,255,0,0.5)' },
+    { name: '绿色', color: 'rgba(0,255,128,0.35)', bg: 'rgba(0,255,128,0.45)' },
+    { name: '蓝色', color: 'rgba(100,180,255,0.35)', bg: 'rgba(100,180,255,0.45)' },
+    { name: '粉色', color: 'rgba(255,130,180,0.35)', bg: 'rgba(255,130,180,0.45)' },
+    { name: '橙色', color: 'rgba(255,180,50,0.35)', bg: 'rgba(255,180,50,0.45)' },
+  ];
+
   const runSelectionAction = async (action, selectedText) => {
     if (!selectedText) return;
     lastSelectionAction = action;
     lastSelectionText = selectedText;
 
     if (action === 'highlight') {
-      // Show color picker near selection
-      const colorPicker = document.getElementById('highlight-color-picker');
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        colorPicker.style.left = `${rect.left}px`;
-        colorPicker.style.top = `${rect.bottom + 8}px`;
-      } else {
-        colorPicker.style.left = `${window.innerWidth / 2 - 100}px`;
-        colorPicker.style.top = `${window.innerHeight / 3}px`;
-      }
-      colorPicker.style.display = 'block';
+      // Create inline color picker popover
+      let picker = document.getElementById('highlight-color-picker');
+      if (picker) picker.remove();
 
-      // Handle color selection
-      const handleColorClick = async (e) => {
-        const btn = e.target.closest('[data-hl-color]');
-        if (!btn) return;
-        const color = btn.dataset.hlColor;
-        colorPicker.style.display = 'none';
-        colorPicker.removeEventListener('click', handleColorClick);
+      picker = document.createElement('div');
+      picker.id = 'highlight-color-picker';
+      picker.style.cssText = 'position:fixed;z-index:10000;background:var(--glass-bg-solid,#fff);backdrop-filter:blur(20px);border:1px solid rgba(0,0,0,0.1);border-radius:12px;padding:10px 12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);display:flex;gap:8px;align-items:center;';
 
-        // Apply visual highlight to textLayer spans
-        try {
-          const sel = window.getSelection();
-          if (sel && sel.rangeCount > 0) {
-            const hlRange = sel.getRangeAt(0);
-            // Walk through all text nodes in the range and highlight their parent spans
-            const walker = document.createTreeWalker(hlRange.commonAncestorContainer, NodeFilter.SHOW_TEXT);
-            let node;
-            while (node = walker.nextNode()) {
-              if (hlRange.intersectsNode(node) && node.parentElement) {
-                const span = node.parentElement.closest('.textLayer span') || node.parentElement;
-                if (span && span.closest('.textLayer')) {
-                  span.style.backgroundColor = color;
-                  span.style.borderRadius = '2px';
-                  span.classList.add('pdf-highlight');
+      HIGHLIGHT_COLORS.forEach(({ name, color, bg }) => {
+        const btn = document.createElement('button');
+        btn.title = name;
+        btn.style.cssText = `width:26px;height:26px;border-radius:50%;border:2px solid rgba(0,0,0,0.1);background:${bg};cursor:pointer;transition:transform 0.15s ease;`;
+        btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.2)'; });
+        btn.addEventListener('mouseleave', () => { btn.style.transform = ''; });
+        btn.addEventListener('click', async () => {
+          picker.remove();
+          // Apply visual highlight
+          try {
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              const hlRange = sel.getRangeAt(0);
+              const walker = document.createTreeWalker(
+                hlRange.commonAncestorContainer.nodeType === Node.TEXT_NODE
+                  ? hlRange.commonAncestorContainer.parentElement
+                  : hlRange.commonAncestorContainer,
+                NodeFilter.SHOW_TEXT
+              );
+              let node;
+              while (node = walker.nextNode()) {
+                if (hlRange.intersectsNode(node) && node.parentElement) {
+                  const span = node.parentElement.closest('.textLayer span') || node.parentElement;
+                  if (span && span.closest('.textLayer')) {
+                    span.style.backgroundColor = color;
+                    span.style.borderRadius = '2px';
+                  }
                 }
               }
             }
+            await authFetch(`${API_BASE}/papers/${paperId}/annotations`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'highlight', selected_text: selectedText, color, page_number: null })
+            });
+            window.showToast?.('已添加高亮', 'success');
+          } catch (e) {
+            window.showToast?.('添加失败', 'error');
           }
+        });
+        picker.appendChild(btn);
+      });
 
-          await authFetch(`${API_BASE}/papers/${paperId}/annotations`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'highlight',
-              selected_text: selectedText,
-              color: color,
-              page_number: null
-            })
-          });
-          window.showToast('已添加高亮', 'success');
-        } catch (e) {
-          window.showToast('添加失败', 'error');
-        }
-      };
-      colorPicker.addEventListener('click', handleColorClick);
+      document.body.appendChild(picker);
 
-      // Close color picker on outside click
-      const closeColorPicker = (e) => {
-        if (!colorPicker.contains(e.target)) {
-          colorPicker.style.display = 'none';
-          document.removeEventListener('mousedown', closeColorPicker);
-        }
-      };
-      setTimeout(() => document.addEventListener('mousedown', closeColorPicker), 100);
+      // Position near selection
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
+        picker.style.left = `${Math.min(rect.left, window.innerWidth - 220)}px`;
+        picker.style.top = `${rect.bottom + 8}px`;
+      } else {
+        picker.style.left = `${window.innerWidth / 2 - 100}px`;
+        picker.style.top = `${window.innerHeight / 3}px`;
+      }
+
+      // Auto-close on outside click
+      setTimeout(() => {
+        const close = (e) => {
+          if (!picker.contains(e.target)) {
+            picker.remove();
+            document.removeEventListener('mousedown', close);
+          }
+        };
+        document.addEventListener('mousedown', close);
+      }, 50);
       return;
     }
 
+    // Translate or Summary
     resultPopover.style.display = 'block';
-    resultPopover.style.left = `${window.innerWidth / 2 - 200}px`;
+    resultPopover.style.left = `${Math.max(20, window.innerWidth / 2 - 200)}px`;
     resultPopover.style.top = `${window.innerHeight / 3}px`;
     resultPopover.innerHTML = `
-      <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-size:0.8rem;color:var(--text-muted);">${action === 'translate' ? '🌐 翻译' : '📝 摘要'}</span>
         <button class="btn btn--ghost btn--sm" id="btn-selection-regenerate">🔄 重新生成</button>
       </div>
       <div id="selection-progress-container" style="min-width:200px;"></div>
@@ -439,13 +442,15 @@ export async function initPaperReaderPage(params) {
 
     try {
       let firstChunk = true;
+      console.log(`[Reader] Running ${action} on text: "${selectedText.slice(0, 50)}..."`);
       await streamAI(endpoint, { text: selectedText }, (text) => {
         if (firstChunk) {
           selProgress.complete();
           firstChunk = false;
         }
         resultPopover.innerHTML = `
-          <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span style="font-size:0.8rem;color:var(--text-muted);">${action === 'translate' ? '🌐 翻译' : '📝 摘要'}</span>
             <button class="btn btn--ghost btn--sm" id="btn-selection-regenerate">🔄 重新生成</button>
           </div>
           <div style="font-size:0.85rem;color:var(--text-primary);line-height:1.6;">${renderMarkdown(text)}</div>
@@ -490,12 +495,19 @@ export async function initPaperReaderPage(params) {
     }
   ]);
 
-  // Reader chat
-  document.getElementById('btn-reader-chat').addEventListener('click', async () => {
-    const input = document.getElementById('reader-chat-input');
-    const msg = input.value.trim();
-    if (!msg) return;
-    input.value = '';
+  // Reader chat — send on click or Enter
+  const chatBtn = document.getElementById('btn-reader-chat');
+  const chatInput = document.getElementById('reader-chat-input');
+
+  const sendChatMessage = async () => {
+    const msg = chatInput.value.trim();
+    if (!msg || isChatBusy) return;
+    isChatBusy = true;
+    chatInput.value = '';
+
+    // Visual: show active state
+    chatBtn.disabled = true;
+    chatBtn.textContent = '...';
 
     const responseDiv = document.getElementById('reader-chat-response');
     responseDiv.style.display = 'block';
@@ -507,10 +519,11 @@ export async function initPaperReaderPage(params) {
 
     try {
       let firstChunk = true;
+      console.log(`[Reader] Chat: "${msg}"`);
       await streamAI(`/papers/${paperId}/chat`, { message: msg }, (text) => {
         if (firstChunk) {
           chatProgress.complete();
-          setTimeout(() => chatProgress.bar.destroy(), 300);
+          setTimeout(() => chatProgress.bar?.destroy(), 300);
           firstChunk = false;
         }
         responseDiv.innerHTML = `
@@ -523,15 +536,27 @@ export async function initPaperReaderPage(params) {
         if (regenBtn) {
           regenBtn.addEventListener('click', () => {
             if (!lastReaderQuestion) return;
-            document.getElementById('reader-chat-input').value = lastReaderQuestion;
-            document.getElementById('btn-reader-chat').click();
+            chatInput.value = lastReaderQuestion;
+            sendChatMessage();
           });
         }
       });
     } catch (e) {
       chatProgress.stop();
-      chatProgress.bar.destroy();
+      chatProgress.bar?.destroy();
       responseDiv.innerHTML = `<span style="color:#ef4444;font-size:0.85rem;">回答失败: ${e.message}</span>`;
+    } finally {
+      isChatBusy = false;
+      chatBtn.disabled = false;
+      chatBtn.textContent = '问';
+    }
+  };
+
+  chatBtn.addEventListener('click', sendChatMessage);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
     }
   });
 
