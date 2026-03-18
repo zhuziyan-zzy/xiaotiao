@@ -160,7 +160,7 @@ export async function initPaperReaderPage(params) {
       canvas.width = renderViewport.width;
       canvas.height = renderViewport.height;
       // Canvas CSS size = CSS scale (display size)
-      canvas.style.cssText = `display:block;width:${cssViewport.width}px;height:${cssViewport.height}px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.12);border-radius:4px;position:relative;z-index:1;`;
+      canvas.style.cssText = `display:block;width:${cssViewport.width}px;height:${cssViewport.height}px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.12);border-radius:4px;`;
 
       const textLayerDiv = document.createElement('div');
       textLayerDiv.className = 'textLayer';
@@ -226,7 +226,7 @@ export async function initPaperReaderPage(params) {
           }
         }
       });
-    }, { threshold: 0.5 });
+    }, { threshold: 0.3 });
 
     document.querySelectorAll('#pdf-container [data-page-num]').forEach(el => {
       observer.observe(el);
@@ -292,6 +292,7 @@ export async function initPaperReaderPage(params) {
         progress = startSimulatedProgress(progressEl, '');
       }
       let firstChunk = true;
+      console.log(`[Reader] Generating summary for page ${pageNum}, text length: ${text.length}`);
       await streamAI(`/papers/${paperId}/page-summary`, { page_number: pageNum, page_text: text.slice(0, 3000) }, (accum) => {
         if (firstChunk && progress) {
           progress.complete();
