@@ -533,11 +533,22 @@ async def chat_with_paper(paper_id: str, body: ChatRequest, request: Request, db
     db_path = request.state.db_path if hasattr(request, "state") else None
     paper_text = get_paper_text(paper_id, db_path)
 
-    # Get chat history
-    history = db.execute(
-        "SELECT role, content FROM paper_chats WHERE paper_id=? ORDER BY created_at",
-        (paper_id,)
-    ).fetchall()
+    # Get chat history (create table if missing)
+    try:
+        history = db.execute(
+            "SELECT role, content FROM paper_chats WHERE paper_id=? ORDER BY created_at",
+            (paper_id,)
+        ).fetchall()
+    except Exception:
+        db.execute("""CREATE TABLE IF NOT EXISTS paper_chats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            paper_id TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            content TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
+        db.commit()
+        history = []
 
     # Build context
     context_parts = [f"论文标题: {row['title']}"]
@@ -613,7 +624,11 @@ async def page_summary(paper_id: str, body: PageSummaryRequest):
     description="将选中的英文段落翻译为中文（流式输出）。",
 )
 async def translate_selection(paper_id: str, body: TextRequest):
-    system_prompt = "你是一位专业翻译。请将以下英文学术文本翻译为准确、流畅的中文。只输出翻译结果，不要添加解释。"
+    system_prompt = """你是一位专业的英中翻译。请将以下英文学术文本翻译为准确、流畅的中文。
+要求：
+1. 必须输出中文翻译，不要输出英文
+2. 保持学术用语的准确性
+3. 只输出翻译结果，不要添加解释或注释"""
 
     async def generate():
         async for chunk in call_claude_stream(system_prompt, body.text[:2000], feature_id="paper_translate"):
@@ -648,11 +663,12 @@ async def explain_selection(paper_id: str, body: TextRequest):
     description="对选中文本生成简短摘要（流式输出）。",
 )
 async def summarize_selection(paper_id: str, body: TextRequest):
-    system_prompt = """你是一位学术论文阅读助手。请对以下选中内容做简要摘要。
+    system_prompt = """你是一位学术论文阅读助手。请对以下选中的学术文本内容做简要的中文摘要分析。
 要求：
-1. 50-120 字
-2. 聚焦核心观点与结论
-3. 使用简洁中文"""
+1. 用中文输出 50-120 字的摘要
+2. 解释这段文字在论文中的作用和含义
+3. 提取关键信息和核心观点
+4. 如果是英文内容，先理解含义再做中文摘要"""
 
     async def generate():
         async for chunk in call_claude_stream(system_prompt, body.text[:2000], feature_id="paper_glossary"):
