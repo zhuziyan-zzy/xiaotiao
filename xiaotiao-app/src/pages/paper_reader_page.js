@@ -41,6 +41,17 @@ export function renderPaperReaderPage(params) {
           <div style="padding:16px 20px;border-bottom:1px solid rgba(0,0,0,0.06);">
             <h3 style="color:var(--text-primary);font-size:1rem;font-weight:600;">阅读概要</h3>
             <p id="pages-read-count" style="color:var(--text-muted);font-size:0.8rem;margin-top:4px;">已读 0 页</p>
+            <!-- Reading progress bar -->
+            <div id="reading-progress-bar" style="margin-top:6px;height:4px;background:rgba(0,0,0,0.06);border-radius:2px;overflow:hidden;">
+              <div id="reading-progress-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#f472b6,#a78bfa);border-radius:2px;transition:width 0.3s;"></div>
+            </div>
+          </div>
+          <!-- Quick Questions -->
+          <div id="reader-quick-questions" style="padding:10px 20px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;flex-direction:column;gap:6px;">
+            <p style="color:var(--text-muted);font-size:0.8rem;margin:0;">快捷提问：</p>
+            <button class="btn btn--ghost reader-quick-q" style="text-align:left;font-size:0.8rem;padding:6px 10px;" data-q="这篇论文的主要贡献是什么？">📌 主要贡献</button>
+            <button class="btn btn--ghost reader-quick-q" style="text-align:left;font-size:0.8rem;padding:6px 10px;" data-q="实验方法有什么局限？">🔬 方法局限</button>
+            <button class="btn btn--ghost reader-quick-q" style="text-align:left;font-size:0.8rem;padding:6px 10px;" data-q="与相关工作有什么区别？">📊 相关工作对比</button>
           </div>
           <div id="page-summaries" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:16px;">
             <p style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:20px;">滚动阅读 PDF，AI 将自动生成逐页概要</p>
@@ -67,6 +78,7 @@ export async function initPaperReaderPage(params) {
   let scale = 1.2;
   let totalPages = 0;
   let pagesRead = new Set();
+  let maxPageReached = 0; // Track max page for progress (never regresses)
   let summariesGenerated = new Set();
   let pdfDoc = null;
   let observer = null;
@@ -116,7 +128,10 @@ export async function initPaperReaderPage(params) {
     document.getElementById('page-indicator').textContent = `第 1 / ${totalPages} 页`;
     document.getElementById('page-jump-input').max = totalPages;
 
-    renderAllPages(pdfDoc, scale, pdfjsLibInstance);
+    await renderAllPages(pdfDoc, scale, pdfjsLibInstance);
+
+    // Load and restore saved annotations/highlights
+    await restoreAnnotations(paperId);
 
   } catch (e) {
     document.getElementById('pdf-loading').innerHTML = `
@@ -193,16 +208,29 @@ export async function initPaperReaderPage(params) {
         if (entry.isIntersecting) {
           const pageNum = parseInt(entry.target.dataset.pageNum);
           pagesRead.add(pageNum);
-          document.getElementById('pages-read-count').textContent = `已读 ${pagesRead.size} 页`;
-          document.getElementById('page-indicator').textContent = `第 ${pageNum} / ${totalPages} 页`;
 
-          // Persist reading progress (debounced)
+          // Track max page reached (never regresses)
+          if (pageNum > maxPageReached) {
+            maxPageReached = pageNum;
+          }
+
+          document.getElementById('pages-read-count').textContent = `已读 ${pagesRead.size} 页`;
+          document.getElementById('page-indicator').textContent = `第 ${pageNum} / ${totalPages} 页（最远 ${maxPageReached} 页）`;
+
+          // Update progress bar
+          if (totalPages > 0) {
+            const pct = Math.round(maxPageReached / totalPages * 100);
+            const fill = document.getElementById('reading-progress-fill');
+            if (fill) fill.style.width = `${pct}%`;
+          }
+
+          // Persist reading progress (debounced) — always send max
           clearTimeout(window.__progressSaveTimer);
           window.__progressSaveTimer = setTimeout(() => {
             authFetch(`${API_BASE}/papers/${paperId}/reading-progress`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ pages_read: pagesRead.size, total_pages: totalPages })
+              body: JSON.stringify({ pages_read: maxPageReached, total_pages: totalPages })
             }).catch(() => {});
           }, 2000);
 
@@ -219,6 +247,35 @@ export async function initPaperReaderPage(params) {
     });
 
     window.__readerObserver = observer;
+  }
+
+  // Helper: get text from a specific page
+  async function getPageText(doc, pageNum) {
+    try {
+      const page = await doc.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      return textContent.items.map(item => item.str).join(' ');
+    } catch { return ''; }
+  }
+
+  // Helper: get surrounding context for selection
+  async function getSelectionContext(selectedText) {
+    // Find which page the selection is in
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return selectedText;
+
+    const range = sel.getRangeAt(0);
+    const pageWrapper = range.commonAncestorContainer?.nodeType === Node.TEXT_NODE
+      ? range.commonAncestorContainer.parentElement?.closest('[data-page-num]')
+      : range.commonAncestorContainer?.closest?.('[data-page-num]');
+
+    if (!pageWrapper || !pdfDoc) return selectedText;
+
+    const pageNum = parseInt(pageWrapper.dataset.pageNum);
+    const pageText = await getPageText(pdfDoc, pageNum);
+
+    // Return selected text with page context
+    return `【所在页面（第${pageNum}页）完整内容】：\n${pageText.slice(0, 2000)}\n\n【用户选中的文本】：\n${selectedText}`;
   }
 
   async function generatePageSummary(doc, pageNum, paperId, force = false) {
@@ -362,24 +419,29 @@ export async function initPaperReaderPage(params) {
           // Apply visual highlight — wrap only the selected text, not the entire span
           try {
             if (savedRange) {
-              // Use highlight wrapping: extract selected content and wrap in a <mark> element
               const mark = document.createElement('mark');
               mark.style.cssText = `background:${color};border-radius:2px;padding:0;`;
               mark.className = 'pdf-highlight';
               try {
                 savedRange.surroundContents(mark);
               } catch (_e) {
-                // surroundContents fails if range crosses element boundaries
-                // Fallback: extract and re-insert wrapped content
                 const fragment = savedRange.extractContents();
                 mark.appendChild(fragment);
                 savedRange.insertNode(mark);
               }
             }
+            // Find which page
+            let pageNum = null;
+            if (savedRange) {
+              const pageWrapper = savedRange.commonAncestorContainer?.nodeType === Node.TEXT_NODE
+                ? savedRange.commonAncestorContainer.parentElement?.closest('[data-page-num]')
+                : savedRange.commonAncestorContainer?.closest?.('[data-page-num]');
+              if (pageWrapper) pageNum = parseInt(pageWrapper.dataset.pageNum);
+            }
             await authFetch(`${API_BASE}/papers/${paperId}/annotations`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ type: 'highlight', selected_text: selectedText, color, page_number: null })
+              body: JSON.stringify({ type: 'highlight', selected_text: selectedText, color, page_number: pageNum })
             });
             window.showToast?.('已添加高亮', 'success');
           } catch (e) {
@@ -392,13 +454,12 @@ export async function initPaperReaderPage(params) {
 
       document.body.appendChild(picker);
 
-      // Position to the RIGHT of the toolbar (not below the selection)
+      // Position to the RIGHT of the toolbar
       const toolbarEl = document.querySelector('.word-selector-bar.is-visible');
       if (toolbarEl) {
         const tbRect = toolbarEl.getBoundingClientRect();
         picker.style.left = `${tbRect.right + 8}px`;
         picker.style.top = `${tbRect.top}px`;
-        // If would go off-screen right, put it to the left instead
         if (tbRect.right + 220 > window.innerWidth) {
           picker.style.left = `${tbRect.left - 220}px`;
         }
@@ -421,7 +482,7 @@ export async function initPaperReaderPage(params) {
       return;
     }
 
-    // Translate or Summary
+    // Translate or Summary — include page context
     resultPopover.style.display = 'block';
     resultPopover.style.left = `${Math.max(20, window.innerWidth / 2 - 200)}px`;
     resultPopover.style.top = `${window.innerHeight / 3}px`;
@@ -445,10 +506,13 @@ export async function initPaperReaderPage(params) {
       ? `/papers/${paperId}/translate`
       : `/papers/${paperId}/summarize-selection`;
 
+    // Get surrounding context for better AI understanding
+    const contextText = await getSelectionContext(selectedText);
+
     try {
       let firstChunk = true;
       console.log(`[Reader] Running ${action} on text: "${selectedText.slice(0, 50)}..."`);
-      await streamAI(endpoint, { text: selectedText }, (text) => {
+      await streamAI(endpoint, { text: contextText }, (text) => {
         if (firstChunk) {
           selProgress.complete();
           firstChunk = false;
@@ -500,6 +564,15 @@ export async function initPaperReaderPage(params) {
     }
   ]);
 
+  // Quick questions — click to auto-fill and send
+  document.querySelectorAll('.reader-quick-q').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const q = btn.dataset.q;
+      document.getElementById('reader-chat-input').value = q;
+      sendChatMessage();
+    });
+  });
+
   // Reader chat — send on click or Enter
   const chatBtn = document.getElementById('btn-reader-chat');
   const chatInput = document.getElementById('reader-chat-input');
@@ -513,6 +586,10 @@ export async function initPaperReaderPage(params) {
     // Visual: show active state
     chatBtn.disabled = true;
     chatBtn.textContent = '...';
+
+    // Hide quick questions after first use
+    const qqPanel = document.getElementById('reader-quick-questions');
+    if (qqPanel) qqPanel.style.display = 'none';
 
     const responseDiv = document.getElementById('reader-chat-response');
     responseDiv.style.display = 'block';
@@ -564,6 +641,54 @@ export async function initPaperReaderPage(params) {
       sendChatMessage();
     }
   });
+
+  // ── Restore saved annotations/highlights ──
+  async function restoreAnnotations(paperId) {
+    try {
+      const res = await authFetch(`${API_BASE}/papers/${paperId}/annotations`);
+      const anns = await res.json();
+      if (!Array.isArray(anns) || anns.length === 0) return;
+
+      // Wait a bit for text layers to be fully rendered
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      for (const ann of anns) {
+        if (ann.type !== 'highlight' || !ann.selected_text) continue;
+
+        const color = ann.color || 'rgba(255,255,0,0.4)';
+        const pageNum = ann.page_number;
+
+        // Find the text in the text layer
+        const pageWrappers = pageNum
+          ? [document.querySelector(`[data-page-num="${pageNum}"]`)]
+          : document.querySelectorAll('[data-page-num]');
+
+        for (const wrapper of pageWrappers) {
+          if (!wrapper) continue;
+          const textLayer = wrapper.querySelector('.textLayer');
+          if (!textLayer) continue;
+
+          // Find spans containing the annotation text
+          const spans = textLayer.querySelectorAll('span');
+          for (const span of spans) {
+            const spanText = span.textContent || '';
+            if (ann.selected_text.includes(spanText.trim()) && spanText.trim().length > 0) {
+              // Apply highlight style to matching spans
+              const mark = document.createElement('mark');
+              mark.style.cssText = `background:${color};border-radius:2px;padding:0;`;
+              mark.className = 'pdf-highlight pdf-highlight--restored';
+              // Wrap span content
+              mark.textContent = span.textContent;
+              span.textContent = '';
+              span.appendChild(mark);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Reader] Failed to restore annotations:', e);
+    }
+  }
 
   // Cleanup on page leave
   window.__readerCleanup = () => {

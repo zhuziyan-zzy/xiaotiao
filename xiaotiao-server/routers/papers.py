@@ -624,16 +624,18 @@ async def page_summary(paper_id: str, body: PageSummaryRequest):
     description="将选中的英文段落翻译为中文（流式输出）。",
 )
 async def translate_selection(paper_id: str, body: TextRequest):
-    system_prompt = """你是一位专业的英中翻译机器。将以下英文学术文本翻译为准确、流畅的中文。
+    system_prompt = """你是一位专业的英中翻译机器。将用户选中的学术文本翻译为准确、流畅的中文。
+用户可能会同时提供所在页面的上下文内容，请结合上下文理解后翻译选中部分。
 严格要求：
-1. 只输出中文翻译结果，不要输出任何英文原文
-2. 保持学术用语的准确性
-3. 不要添加解释、注释、评论或任何额外内容
-4. 不要提问，不要说"请问""需要我"等对话性语句
-5. 直接输出翻译结果，不要有任何前缀或后缀"""
+1. 只翻译【用户选中的文本】部分（如果有标注的话），不要翻译整个页面
+2. 只输出中文翻译结果，不要输出任何英文原文
+3. 保持学术用语的准确性
+4. 不要添加解释、注释、评论或任何额外内容
+5. 不要提问，不要说"请问""需要我"等对话性语句
+6. 直接输出翻译结果，不要有任何前缀或后缀"""
 
     async def generate():
-        async for chunk in call_claude_stream(system_prompt, body.text[:2000], feature_id="paper_translate"):
+        async for chunk in call_claude_stream(system_prompt, body.text[:4000], feature_id="paper_translate"):
             yield chunk
 
     return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
@@ -665,17 +667,19 @@ async def explain_selection(paper_id: str, body: TextRequest):
     description="对选中文本生成简短摘要（流式输出）。",
 )
 async def summarize_selection(paper_id: str, body: TextRequest):
-    system_prompt = """你是一位学术论文摘要生成器。对以下选中的学术文本内容做简要的中文摘要分析。
+    system_prompt = """你是一位学术论文摘要生成器。对用户选中的学术文本内容做简要的中文摘要分析。
+用户可能会同时提供所在页面的上下文内容，请结合上下文理解后摘要选中部分。
 严格要求：
-1. 用中文输出 50-120 字的摘要
-2. 解释这段文字在论文中的作用和含义
-3. 提取关键信息和核心观点
-4. 如果是英文内容，先理解含义再做中文摘要
-5. 直接输出摘要内容，不要提问，不要有对话性语句
-6. 不要添加任何前缀后缀，如"好的""以下是""请问"等"""
+1. 只对【用户选中的文本】部分（如果有标注的话）生成摘要，不要摘要整个页面
+2. 用中文输出 50-120 字的摘要
+3. 解释这段文字在论文中的作用和含义
+4. 提取关键信息和核心观点
+5. 如果是英文内容，先理解含义再做中文摘要
+6. 直接输出摘要内容，不要提问，不要有对话性语句
+7. 不要添加任何前缀后缀，如"好的""以下是""请问"等"""
 
     async def generate():
-        async for chunk in call_claude_stream(system_prompt, body.text[:2000], feature_id="paper_glossary"):
+        async for chunk in call_claude_stream(system_prompt, body.text[:4000], feature_id="paper_glossary"):
             yield chunk
 
     return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
