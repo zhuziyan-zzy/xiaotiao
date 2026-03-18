@@ -142,10 +142,10 @@ def _save_paper(conn, topic_id, entry_title, entry_url, brief, sub_folder_id, so
 
 
 # ═══════════════════════════════════════════
-#  ArXiv Search (XML API — reliable)
+#  ArXiv Search (XML API — with China mirror fallback)
 # ═══════════════════════════════════════════
 async def search_arxiv_for_topic(topic_id: str, title: str, max_results: int = 10, db_path: str = None):
-    """Search ArXiv for papers related to a topic."""
+    """Search ArXiv for papers related to a topic. Tries CN mirror first."""
     import httpx
     import sqlite3
 
@@ -155,15 +155,29 @@ async def search_arxiv_for_topic(topic_id: str, title: str, max_results: int = 1
 
     try:
         query = title.replace(" ", "+")
-        api_url = (
-            "http://export.arxiv.org/api/query"
-            f"?search_query=all:{query}&max_results={max_results}"
-            "&sortBy=submittedDate&sortOrder=descending"
-        )
+        # Try China mirror first, fallback to main API
+        arxiv_hosts = [
+            "http://cn.arxiv.org/api/query",
+            "http://export.arxiv.org/api/query",
+        ]
+        params = f"?search_query=all:{query}&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
 
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(api_url)
-            resp.raise_for_status()
+        resp = None
+        for host in arxiv_hosts:
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(host + params)
+                    resp.raise_for_status()
+                    print(f"[tracker] ArXiv: using {host}")
+                    break
+            except Exception as e:
+                print(f"[tracker] ArXiv host {host} failed: {e}")
+                resp = None
+                continue
+
+        if not resp:
+            print(f"[tracker] ArXiv: all hosts failed for '{title}'")
+            return
 
         ns = {"atom": "http://www.w3.org/2005/Atom"}
         root = ET.fromstring(resp.text)

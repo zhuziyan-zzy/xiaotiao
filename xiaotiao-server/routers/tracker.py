@@ -64,7 +64,7 @@ async def check_now(topic_id: str, background_tasks: BackgroundTasks, request: R
     if not row:
         raise HTTPException(404, "未找到该主题。")
 
-    db_path = request.state.db_path if hasattr(request, "state") else None
+    db_path = getattr(request.state, 'db_path', None)
     # Parse sources from topic record
     try:
         sources = json.loads(row["sources"] or '["arxiv"]')
