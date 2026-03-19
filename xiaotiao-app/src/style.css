@@ -3302,10 +3302,85 @@ textarea.form-input {
   & .hl-word--new { color: #fb923c; background: rgba(251, 146, 60, 0.12); border-bottom-color: rgba(251, 146, 60, 0.4); }
   & .hl-word--new:hover { background: rgba(251, 146, 60, 0.20); }
 
+  /* ── V2.1: Right Sidebar Panel ────────── */
+  & .sidebar-panel { background: var(--glass-bg-solid); border-color: rgba(255,255,255,0.08); }
+  & .sidebar-tab { color: var(--text-secondary); background: transparent; }
+  & .sidebar-tab:hover { background: rgba(255,255,255,0.06); }
+  & .sidebar-tab.active { color: var(--text-primary); background: rgba(255,255,255,0.10); }
+  & .sidebar-section__header { color: var(--text-primary); }
+  & .sidebar-section__link { color: var(--text-accent); }
+  & .sidebar-vocab-item { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.08); }
+  & .sidebar-vocab-item:hover { background: rgba(255,255,255,0.12); }
+  & .sidebar-vocab-item__word { color: var(--text-primary); }
+  & .sidebar-vocab-item__def { color: var(--text-secondary); }
+  & .sidebar-empty__text { color: var(--text-muted); }
+  & .sidebar-loading { color: var(--text-muted); }
+  & .sidebar-translate-input {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.12);
+    color: var(--text-primary);
+  }
+  & .sidebar-translate-input::placeholder { color: var(--text-muted); }
+  & .sidebar-translate-item__style { color: var(--text-muted); }
+  & .sidebar-translate-item__text { color: var(--text-primary); }
+  & .sidebar-translate-result { color: var(--text-primary); }
+
+  /* ── V2.1: Papers/Research Page ────────── */
+  & .papers-stats { color: var(--text-primary); }
+  & .paper-card { background: var(--glass-bg); border-color: rgba(255,255,255,0.08); color: var(--text-primary); }
+  & .paper-card__title { color: var(--text-primary); }
+  & .paper-card__meta { color: var(--text-muted); }
+  & .paper-card__summary { color: var(--text-secondary); }
+  & .paper-import-panel { background: var(--glass-bg); border-color: rgba(255,255,255,0.1); }
+  & .paper-import-panel textarea {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.12);
+    color: var(--text-primary);
+  }
+  & .paper-import-panel textarea::placeholder { color: var(--text-muted); }
+  & .drop-zone { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.12); color: var(--text-secondary); }
+  & .paper-filter-nav { color: var(--text-secondary); }
+  & .paper-filter-btn { color: var(--text-secondary); }
+  & .paper-filter-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
+  & .paper-filter-btn.active { color: var(--text-primary); background: rgba(255,255,255,0.10); }
+
+  /* ── V2.1: Glass panels hardcoded backgrounds ────────── */
+  & .glass-panel { color: var(--text-primary); }
+  & .glass-panel h1, & .glass-panel h2, & .glass-panel h3 { color: var(--text-primary); }
+  & .glass-panel p { color: var(--text-secondary); }
+
+  /* ── V2.1: Topic Config Page ────────── */
+  & .topic-config__label { color: var(--text-secondary); }
+  & .topic-config__hint { color: var(--text-muted); }
+  & .topic-config select, & .topic-config input[type="text"] {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.12);
+    color: var(--text-primary);
+  }
+  & .topic-gen-preview { color: var(--text-primary); }
+
+  /* ── V2.1: Tracker Page ────────── */
+  & .tracker-card { background: var(--glass-bg); border-color: rgba(255,255,255,0.08); color: var(--text-primary); }
+  & .tracker-card__title { color: var(--text-primary); }
+  & .tracker-card__meta { color: var(--text-muted); }
+  & .tracker-stat { color: var(--text-primary); }
+  & .tracker-stat__label { color: var(--text-muted); }
+
   /* ── V2.1: Generic catch-all for remaining inline styles ── */
   & [style*="color:var(--text-muted)"] { color: var(--text-muted) !important; }
   & [style*="color:var(--text-primary)"] { color: var(--text-primary) !important; }
   & [style*="color:var(--text-secondary)"] { color: var(--text-secondary) !important; }
+
+  /* ── V2.1: Force all rgba white backgrounds to dark ── */
+  & [style*="background:rgba(255,255,255"] { background: rgba(255,255,255,0.06) !important; }
+  & [style*="background: rgba(255,255,255"] { background: rgba(255,255,255,0.06) !important; }
+  & [style*="background-color:rgba(255,255,255"] { background-color: rgba(255,255,255,0.06) !important; }
+  & [style*="border:1px solid rgba(0,0,0"] { border-color: rgba(255,255,255,0.08) !important; }
+  & [style*="border-bottom:1px solid rgba(0,0,0"] { border-bottom-color: rgba(255,255,255,0.06) !important; }
+  & [style*="color:#1c1c2e"] { color: var(--text-primary) !important; }
+  & [style*="color: #1c1c2e"] { color: var(--text-primary) !important; }
+  & [style*="color:#58566b"] { color: var(--text-secondary) !important; }
+  & [style*="color: #58566b"] { color: var(--text-secondary) !important; }
 }
 
 /* ══════════════════════════════════════════════
