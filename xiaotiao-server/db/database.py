@@ -43,7 +43,7 @@ def run_migrations(db_path: str = None):
         return
     sql_files = sorted(
         name for name in os.listdir(migrations_dir)
-        if name.endswith(".sql")
+        if name.endswith(".sql") and not name.startswith(".")
     )
     if not sql_files:
         return
