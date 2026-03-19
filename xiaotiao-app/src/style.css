@@ -31,7 +31,7 @@
   /* Text */
   --text-primary: #1c1c2e;
   --text-secondary: #58566b;
-  --text-muted: #9e9bb0;
+  --text-muted: #706d85;
   --text-accent: #5856d6;
 
   /* Accent Palette */
@@ -4754,7 +4754,7 @@ body.sidebar-open .navbar {
 
 .onboarding__level-desc {
   font-size: 0.82rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin-top: 2px;
 }
 
