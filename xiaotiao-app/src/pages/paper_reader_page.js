@@ -9,7 +9,7 @@ const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
 
 export function renderPaperReaderPage(params) {
   return `
-    <div style="display:flex;flex-direction:column;height:calc(100vh - 80px);margin-top:70px;">
+    <div style="display:flex;flex-direction:column;height:calc(100vh - 96px);">
       <!-- Top Bar -->
       <div class="glass-panel" style="padding:8px 20px;border-radius:0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
         <div style="display:flex;align-items:center;gap:12px;">

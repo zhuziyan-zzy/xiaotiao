@@ -370,7 +370,7 @@ router.resolve = function () {
       finish();
     }, { once: true });
     // Timeout fallback: if animationend never fires, proceed anyway
-    setTimeout(finish, 400);
+    setTimeout(finish, 200);
   } else {
     doResolve();
   }
