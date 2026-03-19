@@ -1390,8 +1390,8 @@ def admin_dashboard(request: Request):
         const btn = document.getElementById('btn-test');
         const result = document.getElementById('test-result');
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span> 测试中...';
-        result.innerHTML = '<span style="color:#94a3b8">正在向 AI API 发送测试请求...</span>';
+        btn.innerHTML = '<span class="spinner"></span> 逐个测试中...';
+        result.innerHTML = '<span style="color:#94a3b8">正在向所有已配置的 API 发送测试请求...</span>';
 
         try {{
             const resp = await fetch('/admin/api/test-connection', {{
@@ -1399,15 +1399,31 @@ def admin_dashboard(request: Request):
                 credentials: 'include'
             }});
             const data = await resp.json();
-            if (data.ok) {{
-                result.innerHTML = '<span class="ok">✅ 连接成功</span>'
-                    + '<br>提供商: <strong>' + data.provider + '</strong>'
-                    + '<br>响应时间: <strong>' + data.latency_ms + 'ms</strong>'
-                    + (data.response_preview ? '<br>预览: <em>' + data.response_preview + '</em>' : '');
+            if (data.results) {{
+                let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-top:8px">';
+                for (const [pid, r] of Object.entries(data.results)) {{
+                    const color = r.ok ? 'rgba(52,211,153,.15)' : (r.skipped ? 'rgba(100,116,139,.1)' : 'rgba(248,113,113,.12)');
+                    const border = r.ok ? 'rgba(52,211,153,.4)' : (r.skipped ? 'rgba(100,116,139,.3)' : 'rgba(248,113,113,.3)');
+                    const icon = r.ok ? '✅' : (r.skipped ? '⏭️' : '❌');
+                    html += '<div style="background:' + color + ';border:1px solid ' + border + ';border-radius:8px;padding:10px 12px;font-size:.8rem">';
+                    html += '<div style="font-weight:600;margin-bottom:4px">' + icon + ' ' + r.name + '</div>';
+                    if (r.skipped) {{
+                        html += '<div style="color:#64748b">未配置 API Key</div>';
+                    }} else if (r.ok) {{
+                        html += '<div style="color:#34d399">连接成功 · ' + r.latency_ms + 'ms</div>';
+                        if (r.preview) html += '<div style="color:#94a3b8;font-size:.7rem;margin-top:2px;word-break:break-all">' + r.preview + '</div>';
+                    }} else {{
+                        html += '<div style="color:#f87171">' + (r.error || '未知错误') + '</div>';
+                        if (r.latency_ms) html += '<div style="color:#64748b;font-size:.7rem">耗时: ' + r.latency_ms + 'ms</div>';
+                    }}
+                    html += '</div>';
+                }}
+                html += '</div>';
+                const ok_count = Object.values(data.results).filter(r => r.ok).length;
+                const total = Object.values(data.results).filter(r => !r.skipped).length;
+                result.innerHTML = '<span style="font-weight:600">' + ok_count + '/' + total + ' 个已配置的 API 连接成功</span>' + html;
             }} else {{
-                result.innerHTML = '<span class="err">❌ 连接失败</span>'
-                    + '<br>提供商: ' + (data.provider || 'unknown')
-                    + '<br>错误: <span style="color:#f87171">' + (data.error || '未知错误') + '</span>';
+                result.innerHTML = '<span class="err">❌ ' + (data.error || '测试失败') + '</span>';
             }}
         }} catch(e) {{
             result.innerHTML = '<span class="err">❌ 网络错误: ' + e.message + '</span>';
@@ -1526,44 +1542,85 @@ async def set_feature_provider_api(request: Request):
 
 @router.post("/api/test-connection", include_in_schema=False)
 async def test_connection(request: Request):
+    """Test ALL configured providers and return per-provider results."""
     if not _check_session(request):
         return JSONResponse({"ok": False, "error": "未登录"}, status_code=401)
 
-    from services.llm import _llm_provider
-    provider = _llm_provider()
+    import asyncio
+    from services.llm import PROVIDER_CAPABILITIES
 
-    if provider == "mock":
-        return JSONResponse({
-            "ok": True,
-            "provider": "mock",
-            "latency_ms": 1,
-            "response_preview": "Mock 模式无需真实 API，返回模拟数据",
-        })
+    async def _test_one(pid: str, pinfo: dict) -> dict:
+        env_key = pinfo.get("env_key", "")
+        api_key = os.getenv(env_key, "").strip() if env_key else ""
+        if not api_key:
+            return {"name": pinfo["name"], "skipped": True, "ok": False}
 
-    start = time.time()
-    try:
-        from services.llm import call_claude_json
-        result = await call_claude_json(
-            "You are a test assistant. Reply with a simple JSON object.",
-            'Return {"status":"ok","message":"连接成功"} exactly.',
-            max_tokens=100,
-        )
-        latency = int((time.time() - start) * 1000)
-        preview = json.dumps(result, ensure_ascii=False)[:120]
-        return JSONResponse({
-            "ok": True,
-            "provider": provider,
-            "latency_ms": latency,
-            "response_preview": preview,
-        })
-    except Exception as exc:
-        latency = int((time.time() - start) * 1000)
-        return JSONResponse({
-            "ok": False,
-            "provider": provider,
-            "latency_ms": latency,
-            "error": str(exc)[:300],
-        })
+        start = time.time()
+        try:
+            # Use OpenAI-compatible call for lanyi, openai; native calls for others
+            if pid == "lanyi":
+                from services.llm import _call_lanyi_json
+                result = await _call_lanyi_json(
+                    "You are a test assistant. Reply with a simple JSON object.",
+                    'Return {"status":"ok","message":"连接成功"} exactly.',
+                    max_tokens=100,
+                )
+            elif pid == "openai":
+                from services.llm import _call_openai_json
+                result = await _call_openai_json(
+                    "You are a test assistant. Reply with a simple JSON object.",
+                    'Return {"status":"ok","message":"连接成功"} exactly.',
+                    max_tokens=100,
+                )
+            elif pid == "gemini":
+                from services.llm import _call_gemini_json
+                result = await _call_gemini_json(
+                    "You are a test assistant. Reply with a simple JSON object.",
+                    'Return {"status":"ok","message":"连接成功"} exactly.',
+                    max_tokens=100,
+                )
+            elif pid == "qwen":
+                from services.llm import _call_qwen_json
+                result = await _call_qwen_json(
+                    "You are a test assistant. Reply with a simple JSON object.",
+                    'Return {"status":"ok","message":"连接成功"} exactly.',
+                    max_tokens=100,
+                )
+            elif pid == "anthropic":
+                from services.llm import _call_anthropic_json
+                result = await _call_anthropic_json(
+                    "You are a test assistant. Reply with a simple JSON object.",
+                    'Return {"status":"ok","message":"连接成功"} exactly.',
+                    max_tokens=100,
+                )
+            else:
+                return {"name": pinfo["name"], "skipped": True, "ok": False}
+
+            latency = int((time.time() - start) * 1000)
+            preview = json.dumps(result, ensure_ascii=False)[:120] if isinstance(result, dict) else str(result)[:120]
+            return {"name": pinfo["name"], "ok": True, "latency_ms": latency, "preview": preview}
+        except Exception as exc:
+            latency = int((time.time() - start) * 1000)
+            return {"name": pinfo["name"], "ok": False, "latency_ms": latency, "error": str(exc)[:200]}
+
+    # Test all providers concurrently
+    provider_order = ["lanyi", "gemini", "openai", "qwen", "anthropic"]
+    tasks = []
+    task_pids = []
+    for pid in provider_order:
+        if pid in PROVIDER_CAPABILITIES:
+            tasks.append(_test_one(pid, PROVIDER_CAPABILITIES[pid]))
+            task_pids.append(pid)
+
+    results_list = await asyncio.gather(*tasks, return_exceptions=True)
+    results = {}
+    for pid, res in zip(task_pids, results_list):
+        if isinstance(res, Exception):
+            results[pid] = {"name": PROVIDER_CAPABILITIES[pid]["name"], "ok": False, "error": str(res)[:200]}
+        else:
+            results[pid] = res
+
+    return JSONResponse({"results": results})
 
 
 @router.post("/api/test-all-features", include_in_schema=False)
