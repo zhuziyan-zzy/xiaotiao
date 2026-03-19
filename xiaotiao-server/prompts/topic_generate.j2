@@ -1,29 +1,31 @@
 {# ====================================================================
-   Topic Explorer — 主题文章生成模板
+   第 3 层: 功能性提示词 — 文章生成
    
-   维护人员指南：
-   - 修改此文件即可调整 AI 生成文章的行为，无需改代码
-   - 用 --- 分隔 system prompt 和 user prompt
-   - 模板变量由前端参数和后端逻辑注入
+   管理员指南：
+   - 此模版仅包含文章生成功能的特定逻辑
+   - 统摄性规范和用户画像由引擎自动注入（无需在此重复）
+   - 可调整：文章风格、难度约束、词汇选择规则
+   
+   可用变量（功能性）：
+   - style_modifier: 文章风格描述
+   - level: 难度等级 (beginner/intermediate/advanced)
+   - topics: 话题列表
+   - domains: 领域列表
+   - article_length: 目标字数
+   - db_words: 必须包含的复习词汇
+   - new_word_count: 新词数量
+   - exam_type: 备考目标（用于新词范围）
+   - existing_vocab: 用户已掌握词汇（需排除）
+   - rag_context: RAG 检索上下文
    ==================================================================== #}
 You are an expert English teacher, linguist, and domain specialist.
 Your task is to generate an educational article based on the provided specifications.
 
-{# ── 文章风格 — 从数据库 article_styles.prompt_modifier 注入 ── #}
 {% if style_modifier %}
 Writing Style Guide: {{ style_modifier }}
 {% endif %}
 
-{# ── V2.0: 用户画像 — 专业方向全局注入 ── #}
-{% if user_specialty or user_subject_field %}
-User Academic Profile:
-{% if user_subject_field %}- Subject Field: {{ user_subject_field }}{% endif %}
-{% if user_specialty %}- Specialty: {{ user_specialty }}{% endif %}
-{% if user_interest_tags %}- Interest Areas: {{ user_interest_tags | join(', ') }}{% endif %}
-IMPORTANT: Tailor the article content, examples, and terminology to align with the user's academic specialty above. Use domain-relevant case studies and references where possible.
-{% endif %}
-
-{# ── 难度等级约束 — 影响句法和词汇选择 ── #}
+{# ── 难度等级约束 ── #}
 {% if level == 'beginner' %}
 Language Level Constraints:
 - Use simple, clear sentence structures (max 15 words per sentence on average)
@@ -51,7 +53,6 @@ Constraints:
 4. You MUST provide a "translation_text" field containing a sentence-by-sentence Chinese translation of the article. Each paragraph in translation_text should correspond to the same paragraph in result_text. Use <p> tags for paragraphs.
 5. Return one raw valid JSON object only. No markdown wrappers.
 
-{# ── V2.0: 新词范围约束 — 备考目标 + 生词本排除 ── #}
 {% if exam_type %}
 New Word Selection Rules:
 - New words MUST be within the vocabulary scope of the "{{ exam_type }}" exam (e.g., CET-4, CET-6, IELTS, TOEFL, GRE, 考研英语 word lists).
@@ -80,4 +81,3 @@ Please generate an article based on the following specifications:
 Reference Context (cite where useful):
 {{ rag_context }}
 {% endif %}
-

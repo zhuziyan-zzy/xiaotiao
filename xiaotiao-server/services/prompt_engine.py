@@ -1,5 +1,10 @@
 """
-Prompt Template Engine — Jinja2 模板 + JSON Schema 约束 + Pydantic 校验
+Prompt Template Engine — 三层架构 Jinja2 模板引擎
+
+三层结构:
+  1. 统摄层 (meta_system.j2): AI 行为总纲，控制输出格式和严谨性
+  2. 全局层 (global_context.j2): 用户画像上下文，控制专业方向和难度
+  3. 功能层 (各功能 *.j2): 各功能特定的参数和逻辑
 
 后端维护人员通过编辑 prompts/*.j2 文件来定义 AI 生成的标准化模版。
 前端用户通过 UI 选项注入模板变量，最终生成标准化、高质量的内容。
@@ -51,15 +56,22 @@ def _strip_optional_wrapper(schema: dict) -> dict:
 
 class PromptEngine:
     """
-    核心模板引擎。
+    三层提示词组装引擎。
 
-    使用方式：
+    传统调用（向后兼容）：
         response = await prompt_engine.generate(
             template_name="topic_generate.j2",
             response_model=TopicGenerateResponse,
             topics=["international arbitration"],
-            level="intermediate",
             ...
+        )
+
+    三层调用（推荐）：
+        response = await prompt_engine.generate_with_context(
+            template_name="topic_generate.j2",
+            response_model=TopicGenerateResponse,
+            user_profile={"user_subject_field": "法学", ...},
+            feature_params={"topics": [...], "level": "intermediate", ...},
         )
     """
 
@@ -94,6 +106,17 @@ class PromptEngine:
         rendered = template.render(**variables)
         return self._split_sections(rendered)
 
+    def render_partial(self, template_name: str, **variables: Any) -> str:
+        """
+        渲染一个局部模板（不分割 system/user），返回完整渲染结果。
+        用于渲染统摄层和全局层模板。
+        """
+        try:
+            template = self.env.get_template(template_name)
+            return template.render(**variables).strip()
+        except Exception:
+            return ""
+
     def get_response_schema(self, response_model: Type[BaseModel]) -> dict:
         """从 Pydantic model 生成 JSON Schema，并清理 Optional 包装。"""
         schema = response_model.model_json_schema()
@@ -109,7 +132,7 @@ class PromptEngine:
         **variables: Any,
     ) -> BaseModel:
         """
-        一站式调用：
+        传统一站式调用（向后兼容）：
         1. 渲染 Jinja2 模板
         2. 生成 JSON Schema
         3. 调用 LLM（带 schema 约束）
@@ -123,6 +146,52 @@ class PromptEngine:
 
         raw = await call_llm_with_schema(
             system_prompt, user_prompt, schema, max_tokens=max_tokens, feature_id=feature_id
+        )
+        return response_model.model_validate(raw)
+
+    async def generate_with_context(
+        self,
+        template_name: str,
+        response_model: Type[BaseModel],
+        *,
+        user_profile: dict | None = None,
+        feature_params: dict | None = None,
+        max_tokens: int = 4000,
+        feature_id: str = "",
+    ) -> BaseModel:
+        """
+        三层架构调用：
+        1. 渲染统摄层 (meta_system.j2)
+        2. 渲染全局层 (global_context.j2, 注入 user_profile)
+        3. 渲染功能层 (template_name, 注入 feature_params + user_profile)
+        4. 组装完整 system prompt = Layer1 + Layer2 + Layer3_system
+        5. user prompt = Layer3_user
+        6. 调用 LLM → Pydantic 校验
+        """
+        profile = user_profile or {}
+        params = feature_params or {}
+
+        # Layer 1: 统摄性提示词
+        meta_system = self.render_partial("meta_system.j2")
+
+        # Layer 2: 全局性提示词（用户画像）
+        global_context = self.render_partial("global_context.j2", **profile)
+
+        # Layer 3: 功能性提示词
+        # 合并 profile 到 params，使功能模板也能访问用户画像变量
+        merged_vars = {**profile, **params}
+        feature_system, feature_user = self.render(template_name, **merged_vars)
+
+        # 组装完整 system prompt
+        system_parts = [p for p in [meta_system, global_context, feature_system] if p]
+        system_prompt = "\n\n".join(system_parts)
+
+        schema = self.get_response_schema(response_model)
+
+        from services.llm import call_llm_with_schema
+
+        raw = await call_llm_with_schema(
+            system_prompt, feature_user, schema, max_tokens=max_tokens, feature_id=feature_id
         )
         return response_model.model_validate(raw)
 

@@ -55,28 +55,33 @@ async def generate_topic(req: TopicGenerateRequest, request: Request, db=Depends
     # 获取用户备考目标，用于限定新词范围
     exam_type = user_profile.get("exam_type", req.target_range_id or "cet6")
 
-    # 一站式调用：模板渲染 → JSON Schema 约束 → LLM → Pydantic 校验
+    # V2.1: 三层架构调用 — 用户画像与功能参数分离
     try:
-        response = await prompt_engine.generate(
+        response = await prompt_engine.generate_with_context(
             template_name="topic_generate.j2",
             response_model=TopicGenerateResponse,
             max_tokens=int(req.article_length) * 6 + 2000,
             feature_id="topic_generate",
-            # 模板变量 — 前端参数直接注入
-            topics=req.topics,
-            domains=req.domains,
-            level=req.level,
-            article_length=req.article_length,
-            style_modifier=style_modifier,
-            db_words=db_words,
-            new_word_count=req.new_word_count,
-            # V2.0: 用户画像注入
-            user_specialty=user_profile.get("specialty", ""),
-            user_subject_field=user_profile.get("subject_field", ""),
-            user_interest_tags=user_profile.get("interest_tags", []),
-            # V2.0: 词汇范围约束
-            exam_type=exam_type,
-            existing_vocab=existing_vocab[:100],  # 限制传入量
+            # 第 2 层: 用户画像（自动注入 global_context.j2）
+            user_profile={
+                "user_specialty": user_profile.get("specialty", ""),
+                "user_subject_field": user_profile.get("subject_field", ""),
+                "user_interest_tags": user_profile.get("interest_tags", []),
+                "user_exam_type": exam_type,
+                "user_eng_level": user_profile.get("eng_level", ""),
+            },
+            # 第 3 层: 功能参数（注入 topic_generate.j2）
+            feature_params={
+                "topics": req.topics,
+                "domains": req.domains,
+                "level": req.level,
+                "article_length": req.article_length,
+                "style_modifier": style_modifier,
+                "db_words": db_words,
+                "new_word_count": req.new_word_count,
+                "exam_type": exam_type,
+                "existing_vocab": existing_vocab[:100],
+            },
         )
     except Exception as e:
         import logging

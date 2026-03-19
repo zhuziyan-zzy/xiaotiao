@@ -30,19 +30,27 @@ async def run_translation(req: TranslationRequest, request: Request, db=Depends(
     except Exception:
         pass
 
+    # V2.1: 三层架构调用
     try:
-        response = await prompt_engine.generate(
+        response = await prompt_engine.generate_with_context(
             template_name="translation.j2",
             response_model=TranslationResponse,
             max_tokens=4000,
             feature_id="translation",
-            # 模板变量
-            direction=req.direction,
-            source_text=req.source_text,
-            user_translation=req.user_translation or "",
-            # V2.0: 用户画像注入
-            user_specialty=user_profile.get("specialty", ""),
-            user_subject_field=user_profile.get("subject_field", ""),
+            # 第 2 层: 用户画像
+            user_profile={
+                "user_specialty": user_profile.get("specialty", ""),
+                "user_subject_field": user_profile.get("subject_field", ""),
+                "user_interest_tags": user_profile.get("interest_tags", []),
+                "user_exam_type": user_profile.get("exam_type", ""),
+                "user_eng_level": user_profile.get("eng_level", ""),
+            },
+            # 第 3 层: 功能参数
+            feature_params={
+                "direction": req.direction,
+                "source_text": req.source_text,
+                "user_translation": req.user_translation or "",
+            },
         )
     except Exception as e:
         import logging

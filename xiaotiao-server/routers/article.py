@@ -1,8 +1,9 @@
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from schemas import ArticleAnalyzeRequest, ArticleAnalyzeResponse
 from services.prompt_engine import prompt_engine
 from services.research_store import search_rag_chunks
+from db.auth_db import get_user_profile
 
 router = APIRouter(prefix="/article", tags=["文章解读"])
 
@@ -25,9 +26,16 @@ def _format_rag_contexts(contexts: list) -> str:
     summary="文章解读",
     description="对输入文本进行结构化解读，输出段落解析、术语与关键句。",
 )
-async def analyze_article(req: ArticleAnalyzeRequest):
+async def analyze_article(req: ArticleAnalyzeRequest, request: Request):
     if len(req.source_text.split()) > 3500:
         raise HTTPException(status_code=422, detail="文本超过 3500 词限制。")
+
+    # V2.1: 读取用户画像
+    user_profile = {}
+    try:
+        user_profile = get_user_profile(request.state.user["id"])
+    except Exception:
+        pass
 
     # RAG 上下文准备
     grounded_context = ""
@@ -37,16 +45,27 @@ async def analyze_article(req: ArticleAnalyzeRequest):
         grounded_context = _format_rag_contexts(contexts)
         rag_citations = contexts
 
+    # V2.1: 三层架构调用
     try:
-        response = await prompt_engine.generate(
+        response = await prompt_engine.generate_with_context(
             template_name="article_analyze.j2",
             response_model=ArticleAnalyzeResponse,
             max_tokens=8000,
             feature_id="article_analyze",
-            # 模板变量
-            analysis_mode=req.analysis_mode,
-            source_text=req.source_text,
-            grounded_context=grounded_context,
+            # 第 2 层: 用户画像
+            user_profile={
+                "user_specialty": user_profile.get("specialty", ""),
+                "user_subject_field": user_profile.get("subject_field", ""),
+                "user_interest_tags": user_profile.get("interest_tags", []),
+                "user_exam_type": user_profile.get("exam_type", ""),
+                "user_eng_level": user_profile.get("eng_level", ""),
+            },
+            # 第 3 层: 功能参数
+            feature_params={
+                "analysis_mode": req.analysis_mode,
+                "source_text": req.source_text,
+                "grounded_context": grounded_context,
+            },
         )
     except Exception as e:
         import logging

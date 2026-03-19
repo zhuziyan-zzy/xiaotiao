@@ -1,0 +1,54 @@
+{# ====================================================================
+   第 2 层: 全局性提示词 — 用户画像上下文
+   
+   管理员指南：
+   - 此模版将用户的全局设置注入到所有 AI 功能中
+   - 变量由系统自动从用户画像中读取填充
+   - 修改此文件可调整用户画像如何影响 AI 行为
+   
+   可用变量：
+   - user_exam_type: 备考目标 (cet4/cet6/ielts/toefl/gre/kaoyan/bar_exam)
+   - user_subject_field: 学科领域 (law/finance/cs/medicine/engineering/humanities...)
+   - user_specialty: 细分专业方向
+   - user_interest_tags: 兴趣标签列表
+   - user_eng_level: 英语水平 (cet4/cet6/ielts5/ielts7/native)
+   ==================================================================== #}
+{% if user_subject_field or user_specialty or user_exam_type or user_interest_tags %}
+## User Academic Profile
+
+{% if user_subject_field %}
+- **Subject Field**: {{ user_subject_field }}
+{% endif %}
+{% if user_specialty %}
+- **Specialty Focus**: {{ user_specialty }}
+{% endif %}
+{% if user_exam_type %}
+- **Exam Target**: {{ user_exam_type }}
+{% endif %}
+{% if user_eng_level %}
+- **English Level**: {{ user_eng_level }}
+{% endif %}
+{% if user_interest_tags %}
+- **Interest Areas**: {{ user_interest_tags | join(', ') }}
+{% endif %}
+
+**Profile-Driven Instructions**:
+{% if user_subject_field or user_specialty %}
+- Tailor all content, examples, terminology, and case studies to the user's academic specialty above.
+- When selecting vocabulary, prioritize words commonly encountered in {{ user_subject_field | default('academic') }} literature.
+- Use domain-relevant contexts and real-world examples from {{ user_specialty | default(user_subject_field) | default('the user\'s field') }}.
+{% endif %}
+{% if user_exam_type %}
+- For vocabulary selection, prioritize words within the scope of the "{{ user_exam_type }}" exam word list.
+- Adjust difficulty and format to align with {{ user_exam_type }} exam requirements.
+{% endif %}
+{% if user_eng_level == 'cet4' %}
+- Target language difficulty: CEFR A2-B1, simple sentence structures, high-frequency vocabulary.
+{% elif user_eng_level == 'cet6' %}
+- Target language difficulty: CEFR B1-B2, moderately complex structures, academic vocabulary.
+{% elif user_eng_level == 'ielts5' or user_eng_level == 'ielts7' %}
+- Target language difficulty: CEFR B2-C1, sophisticated academic prose with complex clause structures.
+{% elif user_eng_level == 'native' %}
+- Target language difficulty: CEFR C1-C2, native-level academic prose with discipline-specific register.
+{% endif %}
+{% endif %}
