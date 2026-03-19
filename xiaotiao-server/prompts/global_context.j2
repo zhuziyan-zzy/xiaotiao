@@ -14,41 +14,42 @@
    - user_eng_level: 英语水平 (cet4/cet6/ielts5/ielts7/native)
    ==================================================================== #}
 {% if user_subject_field or user_specialty or user_exam_type or user_interest_tags %}
-## User Academic Profile
+## 用户学术画像
 
 {% if user_subject_field %}
-- **Subject Field**: {{ user_subject_field }}
+- **学科领域**: {{ user_subject_field }}
 {% endif %}
 {% if user_specialty %}
-- **Specialty Focus**: {{ user_specialty }}
+- **细分专业方向**: {{ user_specialty }}
 {% endif %}
 {% if user_exam_type %}
-- **Exam Target**: {{ user_exam_type }}
+- **备考目标**: {{ user_exam_type }}
 {% endif %}
 {% if user_eng_level %}
-- **English Level**: {{ user_eng_level }}
+- **英语水平**: {{ user_eng_level }}
 {% endif %}
 {% if user_interest_tags %}
-- **Interest Areas**: {{ user_interest_tags | join(', ') }}
+- **兴趣领域**: {{ user_interest_tags | join('、') }}
 {% endif %}
 
-**Profile-Driven Instructions**:
+**基于画像的指令**：
 {% if user_subject_field or user_specialty %}
-- Tailor all content, examples, terminology, and case studies to the user's academic specialty above.
-- When selecting vocabulary, prioritize words commonly encountered in {{ user_subject_field | default('academic') }} literature.
-- Use domain-relevant contexts and real-world examples from {{ user_specialty | default(user_subject_field) | default('the user\'s field') }}.
+- 所有内容、示例、术语和案例分析应贴合用户上述学术专业方向。
+- 选择词汇时，优先选取{{ user_subject_field | default('学术') }}文献中常见的词汇。
+- 使用与{{ user_specialty | default(user_subject_field) | default('用户所在领域') }}相关的语境和真实案例。
 {% endif %}
 {% if user_exam_type %}
-- For vocabulary selection, prioritize words within the scope of the "{{ user_exam_type }}" exam word list.
-- Adjust difficulty and format to align with {{ user_exam_type }} exam requirements.
+- 词汇选择应优先选取「{{ user_exam_type }}」考试词汇表范围内的词汇。
+- 难度和格式应与 {{ user_exam_type }} 考试要求对齐。
 {% endif %}
 {% if user_eng_level == 'cet4' %}
-- Target language difficulty: CEFR A2-B1, simple sentence structures, high-frequency vocabulary.
+- 目标语言难度：CEFR A2-B1，使用简单句式和高频词汇。
 {% elif user_eng_level == 'cet6' %}
-- Target language difficulty: CEFR B1-B2, moderately complex structures, academic vocabulary.
+- 目标语言难度：CEFR B1-B2，使用中等复杂句式和学术词汇。
 {% elif user_eng_level == 'ielts5' or user_eng_level == 'ielts7' %}
-- Target language difficulty: CEFR B2-C1, sophisticated academic prose with complex clause structures.
+- 目标语言难度：CEFR B2-C1，使用成熟的学术语体和复杂从句结构。
 {% elif user_eng_level == 'native' %}
-- Target language difficulty: CEFR C1-C2, native-level academic prose with discipline-specific register.
+- 目标语言难度：CEFR C1-C2，使用母语级别的学术语体和学科专用语域。
 {% endif %}
 {% endif %}
+

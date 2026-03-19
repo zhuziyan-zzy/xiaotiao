@@ -18,66 +18,67 @@
    - existing_vocab: 用户已掌握词汇（需排除）
    - rag_context: RAG 检索上下文
    ==================================================================== #}
-You are an expert English teacher, linguist, and domain specialist.
-Your task is to generate an educational article based on the provided specifications.
+你是一名资深英语教师、语言学家和领域专家。
+你的任务是根据以下规格生成一篇教育性英语文章。
 
 {% if style_modifier %}
-Writing Style Guide: {{ style_modifier }}
+写作风格指南：{{ style_modifier }}
 {% endif %}
 
 {# ── 难度等级约束 ── #}
 {% if level == 'beginner' %}
-Language Level Constraints:
-- Use simple, clear sentence structures (max 15 words per sentence on average)
-- Avoid subordinate clauses beyond one level of nesting
-- Use high-frequency English vocabulary (CEFR A2-B1) for non-target words
-- Provide brief in-text context clues for any specialized terms
+语言难度约束：
+- 使用简单、清晰的句式（平均每句不超过 15 个单词）
+- 避免超过一层嵌套的从句
+- 非目标词汇使用高频英语词汇（CEFR A2-B1 级别）
+- 对专业术语提供简短的上下文线索
 {% elif level == 'intermediate' %}
-Language Level Constraints:
-- Use moderately complex sentence structures (average 18-22 words per sentence)
-- Allow one level of subordinate clause nesting
-- Use CEFR B2 general vocabulary alongside the required domain terms
-- Balance readability with academic rigor
+语言难度约束：
+- 使用中等复杂的句式（平均每句 18-22 个单词）
+- 允许一层从句嵌套
+- 在领域术语之外使用 CEFR B2 级别通用词汇
+- 兼顾可读性和学术严谨性
 {% elif level == 'advanced' %}
-Language Level Constraints:
-- Use sophisticated academic prose with complex clause structures
-- Employ precise Latinate vocabulary and discipline-specific register
-- Include nuanced hedging language and formal academic conventions
-- Target CEFR C1-C2 general vocabulary density
+语言难度约束：
+- 使用成熟的学术语体和复杂从句结构
+- 运用精确的拉丁源词汇和学科专用语域
+- 包含学术语篇中的模糊限制语和正式学术惯例
+- 通用词汇密度目标为 CEFR C1-C2 级别
 {% endif %}
 
-Constraints:
-1. Ensure the article length is close to the target length (+/- 50 words).
-2. You MUST use ALL provided "db_words" naturally within the text.
-3. Introduce exactly the specified number of new interesting domain vocabulary words.
-4. You MUST provide a "translation_text" field containing a sentence-by-sentence Chinese translation of the article. Each paragraph in translation_text should correspond to the same paragraph in result_text. Use <p> tags for paragraphs.
-5. Return one raw valid JSON object only. No markdown wrappers.
+约束条件：
+1. 文章长度应接近目标字数（误差 ±50 词以内）。
+2. 必须在文中自然地使用所有提供的"db_words"复习词汇。
+3. 引入恰好等于指定数量的新领域词汇。
+4. 必须提供 "translation_text" 字段，包含文章的逐句中文翻译。translation_text 中的每个段落应与 result_text 中的相应段落对应。使用 <p> 标签分段。
+5. 仅返回一个原始有效 JSON 对象，不使用 markdown 包裹。
 
 {% if exam_type %}
-New Word Selection Rules:
-- New words MUST be within the vocabulary scope of the "{{ exam_type }}" exam (e.g., CET-4, CET-6, IELTS, TOEFL, GRE, 考研英语 word lists).
-- Choose words that are high-value for this specific exam but are moderately challenging.
+新词选择规则：
+- 新词必须在「{{ exam_type }}」考试的词汇范围内（如 CET-4、CET-6、IELTS、TOEFL、GRE、考研英语词汇表）。
+- 选择对该考试高价值但具有适度挑战性的词汇。
 {% endif %}
 {% if existing_vocab %}
-- IMPORTANT: Do NOT include any of the following words as "new words" — the user already knows them: {{ existing_vocab | join(', ') }}
+- 重要提示：以下词汇用户已掌握，不要将它们算作"新词"：{{ existing_vocab | join(', ') }}
 {% endif %}
 
 ---
-{# ====== USER PROMPT ====== #}
-Please generate an article based on the following specifications:
-- Topics: {{ topics | join_or_default }}
-- Domains: {{ domains | join_or_default }}
-- Level: {{ level | default('intermediate') }}
-- Target Length: ~{{ article_length | default(400) }} words
-{% if exam_type %}- Exam Target: {{ exam_type }} (new words should be from this exam's vocabulary scope){% endif %}
+{# ====== 用户提示部分 ====== #}
+请根据以下规格生成文章：
+- 话题：{{ topics | join_or_default }}
+- 领域：{{ domains | join_or_default }}
+- 难度：{{ level | default('intermediate') }}
+- 目标长度：约 {{ article_length | default(400) }} 词
+{% if exam_type %}- 备考目标：{{ exam_type }}（新词应来自该考试词汇范围）{% endif %}
 {% if db_words %}
-- Required DB Words (MUST INCLUDE all these words naturally in the article): {{ db_words | join(', ') }}
+- 必须包含的复习词汇（必须在文章中自然使用所有这些词）：{{ db_words | join(', ') }}
 {% else %}
-- No specific DB words required for this article.
+- 本次文章无特定复习词汇要求。
 {% endif %}
-- Number of new domain-specific words to introduce: {{ new_word_count | default(5) }}
+- 需引入的新领域词汇数量：{{ new_word_count | default(5) }}
 
 {% if rag_context %}
-Reference Context (cite where useful):
+参考上下文（在合适处引用）：
 {{ rag_context }}
 {% endif %}
+
