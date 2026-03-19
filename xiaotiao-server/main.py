@@ -59,6 +59,7 @@ def on_startup():
         "openai": "OPENAI_API_KEY",
         "qwen": "QWEN_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
+        "lanyi": "LANYI_API_KEY",
     }
     if not provider:
         logger.warning("⚠️  LLM_PROVIDER 未设置，将自动检测或使用 mock 模式")

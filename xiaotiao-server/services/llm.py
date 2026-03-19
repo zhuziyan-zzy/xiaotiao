@@ -98,6 +98,29 @@ PROVIDER_CAPABILITIES: dict[str, dict] = {
         "env_model": "KIMI_MODEL",
         "json": True, "stream": True, "vision": False, "schema": False,
     },
+    "lanyi": {
+        "name": "蓝移API (中转)",
+        "models": [
+            "claude-opus-4-20250514",
+            "claude-sonnet-4-20250514",
+            "claude-haiku-4-5-20250514",
+            "claude-3-7-sonnet-20250219",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-4-turbo",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "deepseek-chat",
+        ],
+        "default_model": "claude-sonnet-4-20250514",
+        "env_key": "LANYI_API_KEY",
+        "env_model": "LANYI_MODEL",
+        "env_base_url": "LANYI_BASE_URL",
+        "default_base_url": "http://1.95.142.151:3000/v1",
+        "json": True, "stream": True, "vision": True, "schema": False,
+    },
 }
 
 # What capability each feature requires
@@ -407,6 +430,21 @@ def _openai_api_key() -> str:
     return api_key
 
 
+def _lanyi_base_url() -> str:
+    return _env("LANYI_BASE_URL", "http://1.95.142.151:3000/v1").rstrip("/")
+
+
+def _lanyi_api_key() -> str:
+    api_key = _env("LANYI_API_KEY")
+    if not api_key:
+        raise RuntimeError("LANYI_API_KEY 未配置。请在管理后台设置蓝移API Key。")
+    return api_key
+
+
+def _lanyi_model() -> str:
+    return _env("LANYI_MODEL", "claude-sonnet-4-20250514")
+
+
 def _gemini_base_url() -> str:
     base_url = _env("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
     return base_url
@@ -431,10 +469,13 @@ def _extract_gemini_text(payload: dict) -> str:
     return "".join(text_chunks)
 
 
-async def _call_openai_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> dict:
-    model = _env("OPENAI_MODEL", "gpt-4o-mini")
-    max_retries = int(_env("OPENAI_HTTP_RETRIES", "2"))
-    timeout_seconds = int(_env("OPENAI_HTTP_TIMEOUT", "180"))
+async def _call_openai_compatible_json(
+    system_prompt: str, user_prompt: str, max_tokens: int = 4000,
+    *, api_key: str, base_url: str, model: str, label: str = "OpenAI"
+) -> dict:
+    """Generic OpenAI-compatible JSON call — used by openai and lanyi providers."""
+    max_retries = 2
+    timeout_seconds = 180
     payload = {
         "model": model,
         "temperature": 0.7,
@@ -450,12 +491,12 @@ async def _call_openai_json(system_prompt: str, user_prompt: str, max_tokens: in
         ],
     }
     headers = {
-        "Authorization": f"Bearer {_openai_api_key()}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     async with httpx.AsyncClient(timeout=timeout_seconds) as client:
         for attempt in range(max_retries + 1):
-            resp = await client.post(f"{_openai_base_url()}/chat/completions", json=payload, headers=headers)
+            resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
             if resp.status_code >= 400:
                 retryable = resp.status_code in {408, 409, 429, 500, 502, 503, 504}
                 if retryable and attempt < max_retries:
@@ -468,11 +509,27 @@ async def _call_openai_json(system_prompt: str, user_prompt: str, max_tokens: in
                     detail = err_obj.get("message") if isinstance(err_obj, dict) else str(err_payload)
                 except Exception:
                     detail = resp.text
-                raise RuntimeError(f"OpenAI API {resp.status_code}: {detail}")
+                raise RuntimeError(f"{label} API {resp.status_code}: {detail}")
             data = resp.json()
             break
     content = _safe_openai_content(data)
     return _robust_json_loads(content)
+
+
+async def _call_openai_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> dict:
+    return await _call_openai_compatible_json(
+        system_prompt, user_prompt, max_tokens,
+        api_key=_openai_api_key(), base_url=_openai_base_url(),
+        model=_env("OPENAI_MODEL", "gpt-4o-mini"), label="OpenAI",
+    )
+
+
+async def _call_lanyi_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> dict:
+    return await _call_openai_compatible_json(
+        system_prompt, user_prompt, max_tokens,
+        api_key=_lanyi_api_key(), base_url=_lanyi_base_url(),
+        model=_lanyi_model(), label="蓝移API",
+    )
 
 
 async def _call_gemini_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> dict:
@@ -519,10 +576,11 @@ async def _call_gemini_json(system_prompt: str, user_prompt: str, max_tokens: in
     return _robust_json_loads(text)
 
 
-async def _call_openai_stream(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> AsyncGenerator[str, None]:
-    model = _env("OPENAI_MODEL", "gpt-4o-mini")
-    max_retries = int(_env("OPENAI_HTTP_RETRIES", "1"))
-    timeout_seconds = int(_env("OPENAI_HTTP_TIMEOUT", "120"))
+async def _call_openai_compatible_stream(
+    system_prompt: str, user_prompt: str, max_tokens: int = 4000,
+    *, api_key: str, base_url: str, model: str, label: str = "OpenAI"
+) -> AsyncGenerator[str, None]:
+    """Generic OpenAI-compatible streaming — used by openai and lanyi providers."""
     payload = {
         "model": model,
         "temperature": 0.7,
@@ -534,20 +592,20 @@ async def _call_openai_stream(system_prompt: str, user_prompt: str, max_tokens: 
         ],
     }
     headers = {
-        "Authorization": f"Bearer {_openai_api_key()}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-        for attempt in range(max_retries + 1):
+    async with httpx.AsyncClient(timeout=120) as client:
+        for attempt in range(2):
             async with client.stream(
                 "POST",
-                f"{_openai_base_url()}/chat/completions",
+                f"{base_url}/chat/completions",
                 json=payload,
                 headers=headers,
             ) as resp:
                 if resp.status_code >= 400:
                     retryable = resp.status_code in {408, 409, 429, 500, 502, 503, 504}
-                    if retryable and attempt < max_retries:
+                    if retryable and attempt < 1:
                         await asyncio.sleep(0.8 * (attempt + 1))
                         continue
                     detail = ""
@@ -557,7 +615,7 @@ async def _call_openai_stream(system_prompt: str, user_prompt: str, max_tokens: 
                         detail = err_obj.get("message") if isinstance(err_obj, dict) else str(err_payload)
                     except Exception:
                         detail = await resp.aread()
-                    raise RuntimeError(f"OpenAI API {resp.status_code}: {detail}")
+                    raise RuntimeError(f"{label} API {resp.status_code}: {detail}")
                 async for line in resp.aiter_lines():
                     if not line:
                         continue
@@ -577,6 +635,15 @@ async def _call_openai_stream(system_prompt: str, user_prompt: str, max_tokens: 
                     if text:
                         yield text
             return
+
+
+async def _call_openai_stream(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> AsyncGenerator[str, None]:
+    async for text in _call_openai_compatible_stream(
+        system_prompt, user_prompt, max_tokens,
+        api_key=_openai_api_key(), base_url=_openai_base_url(),
+        model=_env("OPENAI_MODEL", "gpt-4o-mini"), label="OpenAI",
+    ):
+        yield text
 
 
 async def _call_gemini_stream(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> AsyncGenerator[str, None]:
@@ -879,6 +946,13 @@ async def call_claude_stream(system_prompt: str, user_prompt: str, max_tokens: i
     try:
         if provider == "gemini":
             async for text in _call_gemini_stream(system_prompt, user_prompt, max_tokens=max_tokens):
+                yield text
+        elif provider == "lanyi":
+            async for text in _call_openai_compatible_stream(
+                system_prompt, user_prompt, max_tokens,
+                api_key=_lanyi_api_key(), base_url=_lanyi_base_url(),
+                model=_lanyi_model(), label="蓝移API",
+            ):
                 yield text
         elif provider == "openai":
             async for text in _call_openai_stream(system_prompt, user_prompt, max_tokens=max_tokens):
@@ -1233,6 +1307,8 @@ async def call_llm_with_schema(
             return await _call_gemini_with_schema(
                 system_prompt, user_prompt, response_schema, max_tokens=max_tokens
             )
+        if provider == "lanyi":
+            return await _call_lanyi_json(system_prompt, user_prompt, max_tokens=max_tokens)
         if provider == "openai":
             return await _call_openai_with_schema(
                 system_prompt, user_prompt, response_schema, max_tokens=max_tokens
@@ -1255,6 +1331,8 @@ async def call_claude_json(system_prompt: str, user_prompt: str, max_tokens: int
     try:
         if provider == "gemini":
             return await _call_gemini_json(system_prompt, user_prompt, max_tokens=max_tokens)
+        if provider == "lanyi":
+            return await _call_lanyi_json(system_prompt, user_prompt, max_tokens=max_tokens)
         if provider == "openai":
             return await _call_openai_json(system_prompt, user_prompt, max_tokens=max_tokens)
         if provider == "qwen":
