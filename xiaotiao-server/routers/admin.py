@@ -887,22 +887,20 @@ def admin_dashboard(request: Request):
     # ── 蓝移API — dedicated card with dropdown model selection ──
     lanyi_key = os.getenv("LANYI_API_KEY", "").strip()
     lanyi_base = os.getenv("LANYI_BASE_URL", "").strip()
-    lanyi_model_val = os.getenv("LANYI_MODEL", "").strip() or "claude-sonnet-4-20250514"
+    lanyi_model_val = os.getenv("LANYI_MODEL", "").strip() or "claude-sonnet-4.6"
     lanyi_selected = "selected" if provider == "lanyi" else ""
     lanyi_status = f'<div class="key-status ok">✓ 已配置</div>' if lanyi_key else f'<div class="key-status" style="color:#64748b">未配置</div>'
     lanyi_models = [
-        ("claude-opus-4-20250514", "Claude Opus 4 (最强)"),
-        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (推荐)"),
-        ("claude-haiku-4-5-20250514", "Claude Haiku 4.5 (快速)"),
-        ("claude-3-7-sonnet-20250219", "Claude 3.7 Sonnet"),
-        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet"),
-        ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku"),
-        ("gpt-4o", "GPT-4o"),
-        ("gpt-4o-mini", "GPT-4o Mini (便宜)"),
-        ("gpt-4-turbo", "GPT-4 Turbo"),
-        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
-        ("gemini-2.0-flash", "Gemini 2.0 Flash"),
-        ("deepseek-chat", "DeepSeek Chat"),
+        ("claude-opus-4.6", "Claude Opus 4.6 (最新最强)"),
+        ("claude-sonnet-4.6", "Claude Sonnet 4.6 (推荐)"),
+        ("claude-opus-4.5", "Claude Opus 4.5"),
+        ("claude-sonnet-4-5-20250929", "Claude Sonnet 4.5"),
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4"),
+        ("claude-haiku-4-5-20251001", "Claude Haiku 4.5 (快速)"),
+        ("claude-opus-4-5-20251101", "Claude Opus 4.5 (1101)"),
+        ("deepseek-3.2", "DeepSeek 3.2"),
+        ("qwen3-coder-next", "Qwen3 Coder"),
+        ("minimax-m2.1", "MiniMax M2.1"),
     ]
     lanyi_model_options = ""
     for mid, mname in lanyi_models:

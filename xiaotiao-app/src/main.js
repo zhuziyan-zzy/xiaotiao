@@ -354,13 +354,23 @@ router.resolve = function () {
   const appEl = document.getElementById('app');
 
   // ANIM-04: page leave transition
-  if (appEl && appEl.children.length > 0 && window.__routeInitialized) {
+  // Skip transition on auth-view (login page) to prevent redirect stalling
+  const isAuthView = document.body.classList.contains('auth-view');
+  if (appEl && appEl.children.length > 0 && window.__routeInitialized && !isAuthView) {
     appEl.classList.add('page-transition-leave');
-    appEl.addEventListener('animationend', function handler() {
-      appEl.removeEventListener('animationend', handler);
+    let resolved = false;
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
       appEl.classList.remove('page-transition-leave');
       doResolve();
+    };
+    appEl.addEventListener('animationend', function handler() {
+      appEl.removeEventListener('animationend', handler);
+      finish();
     }, { once: true });
+    // Timeout fallback: if animationend never fires, proceed anyway
+    setTimeout(finish, 400);
   } else {
     doResolve();
   }
