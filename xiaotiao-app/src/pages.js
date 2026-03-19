@@ -18,6 +18,45 @@ const CONFIDENCE_LABELS = { high: '高', medium: '中', low: '低' };
 function confidenceLabel(hint) {
   return `可信度: ${CONFIDENCE_LABELS[hint] || hint}`;
 }
+
+/**
+ * V2.0: 在文章 HTML 中高亮目标词（db_words）和新词（new_words）
+ * - db_words: 蓝色加粗（复习词汇）
+ * - new_words: 橙色加粗（新学词汇）
+ */
+function highlightArticleWords(html, dbWordsUsed = [], newWords = []) {
+  if ((!dbWordsUsed || !dbWordsUsed.length) && (!newWords || !newWords.length)) return html;
+
+  // Collect all words to highlight with their type
+  const wordMap = new Map(); // word lowercase -> { word, type }
+  (dbWordsUsed || []).forEach(w => {
+    if (w) wordMap.set(w.toLowerCase(), { word: w, type: 'db' });
+  });
+  (newWords || []).forEach(w => {
+    const word = typeof w === 'string' ? w : w.word;
+    if (word) wordMap.set(word.toLowerCase(), { word, type: 'new' });
+  });
+
+  if (wordMap.size === 0) return html;
+
+  // Sort by length descending to match longer phrases first
+  const sortedWords = [...wordMap.values()].sort((a, b) => b.word.length - a.word.length);
+
+  // Build a regex that matches any of the words (case insensitive, word boundary)
+  const escaped = sortedWords.map(w => w.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi');
+
+  // Replace text nodes only (skip HTML tags)
+  return html.replace(/>([^<]+)</g, (fullMatch, textContent) => {
+    const replaced = textContent.replace(regex, (match) => {
+      const entry = wordMap.get(match.toLowerCase());
+      if (!entry) return match;
+      const cls = entry.type === 'db' ? 'hl-word--db' : 'hl-word--new';
+      return `<mark class="hl-word ${cls}">${match}</mark>`;
+    });
+    return `>${replaced}<`;
+  });
+}
 import { startSimulatedProgress } from './utils/stream.js';
 
 // ============ Shared Layout — Liquid Glass ============
@@ -570,7 +609,7 @@ export function initTopicExplorer() {
           </div>
           <div class="gen-article__section">
             <div class="gen-article__section-title">📄 英文学习文章</div>
-            <div class="gen-article__text">${sanitizeHtml(data.result_text)}</div>
+            <div class="gen-article__text">${highlightArticleWords(sanitizeHtml(data.result_text), data.db_words_used, data.new_words)}</div>
           </div>
 
           ${data.translation_text ? `
@@ -846,7 +885,7 @@ export function initTopicExplorer() {
         <div class="gen-article" style="margin-top:16px;border-top:1px solid rgba(0,0,0,0.06);padding-top:16px;">
           <div class="gen-article__section">
             <div class="gen-article__section-title">📄 英文学习文章</div>
-            <div class="gen-article__text">${sanitizeHtml(data.result_text)}</div>
+            <div class="gen-article__text">${highlightArticleWords(sanitizeHtml(data.result_text), data.db_words_used, data.new_words)}</div>
           </div>
           ${data.translation_text ? `
           <div class="gen-article__section">

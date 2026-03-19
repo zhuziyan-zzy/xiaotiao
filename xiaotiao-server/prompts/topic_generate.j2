@@ -51,6 +51,16 @@ Constraints:
 4. You MUST provide a "translation_text" field containing a sentence-by-sentence Chinese translation of the article. Each paragraph in translation_text should correspond to the same paragraph in result_text. Use <p> tags for paragraphs.
 5. Return one raw valid JSON object only. No markdown wrappers.
 
+{# ── V2.0: 新词范围约束 — 备考目标 + 生词本排除 ── #}
+{% if exam_type %}
+New Word Selection Rules:
+- New words MUST be within the vocabulary scope of the "{{ exam_type }}" exam (e.g., CET-4, CET-6, IELTS, TOEFL, GRE, 考研英语 word lists).
+- Choose words that are high-value for this specific exam but are moderately challenging.
+{% endif %}
+{% if existing_vocab %}
+- IMPORTANT: Do NOT include any of the following words as "new words" — the user already knows them: {{ existing_vocab | join(', ') }}
+{% endif %}
+
 ---
 {# ====== USER PROMPT ====== #}
 Please generate an article based on the following specifications:
@@ -58,6 +68,7 @@ Please generate an article based on the following specifications:
 - Domains: {{ domains | join_or_default }}
 - Level: {{ level | default('intermediate') }}
 - Target Length: ~{{ article_length | default(400) }} words
+{% if exam_type %}- Exam Target: {{ exam_type }} (new words should be from this exam's vocabulary scope){% endif %}
 {% if db_words %}
 - Required DB Words (MUST INCLUDE all these words naturally in the article): {{ db_words | join(', ') }}
 {% else %}
@@ -69,3 +80,4 @@ Please generate an article based on the following specifications:
 Reference Context (cite where useful):
 {{ rag_context }}
 {% endif %}
+

@@ -44,6 +44,17 @@ async def generate_topic(req: TopicGenerateRequest, request: Request, db=Depends
     if style_row:
         style_modifier = style_row["prompt_modifier"] or ""
 
+    # V2.0: 获取用户已有生词本词汇，用于排除
+    existing_vocab = []
+    try:
+        rows = db.execute("SELECT word FROM vocab").fetchall()
+        existing_vocab = [r["word"].lower() for r in rows]
+    except Exception:
+        pass
+
+    # 获取用户备考目标，用于限定新词范围
+    exam_type = user_profile.get("exam_type", req.target_range_id or "cet6")
+
     # 一站式调用：模板渲染 → JSON Schema 约束 → LLM → Pydantic 校验
     try:
         response = await prompt_engine.generate(
@@ -63,6 +74,9 @@ async def generate_topic(req: TopicGenerateRequest, request: Request, db=Depends
             user_specialty=user_profile.get("specialty", ""),
             user_subject_field=user_profile.get("subject_field", ""),
             user_interest_tags=user_profile.get("interest_tags", []),
+            # V2.0: 词汇范围约束
+            exam_type=exam_type,
+            existing_vocab=existing_vocab[:100],  # 限制传入量
         )
     except Exception as e:
         import logging
