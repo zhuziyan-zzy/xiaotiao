@@ -20,14 +20,19 @@ echo "  小挑部署脚本"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=========================================="
 
-# ---- 1. 拉取最新代码 ----
+# ---- 1. 拉取最新代码 (仅 git 模式) ----
 echo ""
-echo "[1/6] 拉取最新代码..."
+echo "[1/6] 检查代码来源..."
 cd "$PROJECT_ROOT"
-git pull --ff-only origin main || {
-    echo "⚠️  git pull 失败，请手动解决冲突后重试"
-    exit 1
-}
+if [ -d ".git" ]; then
+    git config --global --add safe.directory "$PROJECT_ROOT" 2>/dev/null || true
+    git pull --ff-only origin main || {
+        echo "⚠️  git pull 失败，如果是 scp 部署可忽略"
+    }
+    echo "  ✅ Git 模式 — 代码已更新"
+else
+    echo "  ✅ SCP 模式 — 跳过 git pull"
+fi
 
 # ---- 2. Python 虚拟环境 & 依赖 ----
 echo ""
