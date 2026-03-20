@@ -44,6 +44,7 @@ class AnnotationCreate(BaseModel):
     note: Optional[str] = None
     page_number: Optional[int] = None
     position: Optional[str] = None
+    color: Optional[str] = None
 
 class InsightRequest(BaseModel):
     text: Optional[str] = None
@@ -708,12 +709,12 @@ def list_annotations(paper_id: str, db=Depends(get_db)):
 def create_annotation(paper_id: str, body: AnnotationCreate, db=Depends(get_db)):
     ann_id = str(uuid.uuid4())
     db.execute(
-        """INSERT INTO paper_annotations (id, paper_id, type, selected_text, note, page_number, position)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (ann_id, paper_id, body.type, body.selected_text, body.note, body.page_number, body.position)
+        """INSERT INTO paper_annotations (id, paper_id, type, selected_text, note, page_number, position, color)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (ann_id, paper_id, body.type, body.selected_text, body.note, body.page_number, body.position, body.color)
     )
     db.commit()
-    return {"id": ann_id, "type": body.type, "selected_text": body.selected_text}
+    return {"id": ann_id, "type": body.type, "selected_text": body.selected_text, "color": body.color}
 
 
 @router.delete(

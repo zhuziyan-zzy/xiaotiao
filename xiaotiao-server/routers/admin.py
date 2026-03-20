@@ -41,16 +41,18 @@ AI_FEATURES = [
         "frontend_action": "选择主题 → 生成文章",
         "template": "topic_generate.j2",
         "call_type": "JSON",
-        "description": "根据用户选择的主题和词汇，AI 生成包含指定单词的教学文章",
+        "description": "根据用户选择的主题、用户画像专业方向和涉及事件，AI 生成包含指定单词的教学文章",
         "how_it_works": [
-            {"who": "user", "text": "👤 用户选择主题、领域、难度"},
+            {"who": "user", "text": "👤 用户输入主题关键词"},
+            {"who": "system", "text": "⚙️ 从用户画像读取专业方向（只读展示）"},
+            {"who": "user", "text": "👤 (可选) 填写涉及事件/案例"},
             {"who": "system", "text": "⚙️ 系统读取用户生词本"},
             {"who": "system", "text": "📄 填入提示词模板 topic_generate.j2"},
             {"who": "ai", "text": "🤖 AI 生成含指定词汇的文章(JSON)"},
             {"who": "system", "text": "📤 返回文章 + 词汇高亮到前端"},
         ],
-        "requires": ["🔑 AI API Key(如 Gemini/OpenAI)", "📄 模板文件 topic_generate.j2", "📚 用户生词本数据"],
-        "variables": ["topics", "domains", "level", "article_length", "db_words", "new_word_count", "style_modifier", "rag_context"],
+        "requires": ["🔑 AI API Key(如 Gemini/OpenAI)", "📄 模板文件 topic_generate.j2", "📚 用户生词本数据", "👤 用户画像(专业方向)"],
+        "variables": ["topics", "domains", "level", "article_length", "db_words", "new_word_count", "style_modifier", "events", "rag_context"],
         "pipeline": [
             {"step": "request", "label": "前端请求", "test": "route"},
             {"step": "template", "label": "模板渲染", "test": "template", "file": "topic_generate.j2"},
@@ -92,19 +94,20 @@ AI_FEATURES = [
         "icon": "🌐",
         "frontend": "翻译工作室",
         "frontend_path": "/#/translation",
-        "frontend_action": "输入源文 → AI 提供三种风格译文",
+        "frontend_action": "输入源文 → AI 根据画像生成多专业方向译文",
         "template": "translation.j2",
         "call_type": "JSON",
-        "description": "AI 提供直译/法律/简明三种翻译风格，并对用户自译进行点评",
+        "description": "AI 根据用户画像的细分专业和兴趣标签，动态生成对应专业语境下的翻译版本（直译版 + N个专业语境版 + 简明版），并对用户自译进行点评",
         "how_it_works": [
             {"who": "user", "text": "👤 用户输入源文 + 选择翻译方向"},
             {"who": "user", "text": "👤 (可选) 输入自己的翻译"},
-            {"who": "system", "text": "📄 填入提示词模板 translation.j2"},
-            {"who": "ai", "text": "🤖 AI 生成三种风格译文 + 点评(JSON)"},
-            {"who": "system", "text": "📤 前端展示多风格翻译对比"},
+            {"who": "system", "text": "⚙️ 读取用户画像(细分专业 + 兴趣标签)"},
+            {"who": "system", "text": "📄 动态填入 translation.j2 生成 N 个翻译版本"},
+            {"who": "ai", "text": "🤖 AI 生成直译+专业语境+简明等多版本译文(JSON)"},
+            {"who": "system", "text": "📤 前端展示多版本翻译卡片对比"},
         ],
-        "requires": ["🔑 AI API Key(如 Gemini/OpenAI)", "📄 模板文件 translation.j2"],
-        "variables": ["source_text", "direction", "user_translation"],
+        "requires": ["🔑 AI API Key(如 Gemini/OpenAI)", "📄 模板文件 translation.j2", "👤 用户画像(专业+兴趣)"],
+        "variables": ["source_text", "direction", "user_translation", "specialties", "interest_tags"],
         "pipeline": [
             {"step": "request", "label": "前端请求", "test": "route"},
             {"step": "template", "label": "模板渲染", "test": "template", "file": "translation.j2"},
@@ -272,20 +275,24 @@ AI_FEATURES = [
         "icon": "🌍",
         "frontend": "论文阅读器",
         "frontend_path": "/#/papers/:id/read",
-        "frontend_action": "选中段落 → AI 翻译",
-        "template": None,
-        "call_type": "Stream",
-        "description": "选中论文中的段落文本，AI 流式翻译为中文",
+        "frontend_action": "选中段落 → JSON结构化翻译 + 上下文流式分析",
+        "template": "translation.j2",
+        "call_type": "JSON + Stream",
+        "description": "选中论文段落后，调用 /translation/run 生成与全局翻译相同的多版本结构化译文(按用户画像专业方向)，同时流式生成结合上下文的整体性翻译与分析",
         "how_it_works": [
-            {"who": "user", "text": "👤 用户选中文本"},
-            {"who": "ai", "text": "🤖 AI 流式翻译"},
-            {"who": "system", "text": "📤 弹窗展示翻译结果"},
+            {"who": "user", "text": "👤 用户在 PDF 中选中段落文本"},
+            {"who": "system", "text": "⚙️ 调用 /translation/run 生成结构化多版本翻译(JSON)"},
+            {"who": "system", "text": "📤 前端渲染多版本翻译卡片 + 术语 + 提示"},
+            {"who": "system", "text": "⚙️ 提取所在页面上下文"},
+            {"who": "ai", "text": "🤖 AI 流式生成上下文整体性翻译与分析"},
+            {"who": "system", "text": "📤 实时渲染上下文翻译到弹窗底部"},
         ],
-        "requires": ["🔑 AI API Key(支持 Stream)"],
-        "variables": [],
+        "requires": ["🔑 AI API Key(支持 JSON + Stream)", "📄 模板文件 translation.j2", "👤 用户画像"],
+        "variables": ["source_text", "direction", "specialties", "interest_tags", "page_context"],
         "pipeline": [
             {"step": "request", "label": "前端请求", "test": "route"},
-            {"step": "llm", "label": "AI 翻译", "test": "llm_stream"},
+            {"step": "llm_json", "label": "结构化翻译", "test": "llm_json"},
+            {"step": "llm_stream", "label": "上下文分析", "test": "llm_stream"},
             {"step": "response", "label": "返回前端", "test": "auto"},
         ],
     },
@@ -584,6 +591,8 @@ def _get_provider_info():
         "openai": "OPENAI_API_KEY",
         "qwen": "QWEN_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
+        "lanyi": "LANYI_API_KEY",
+        "lemonapi": "LEMONAPI_API_KEY",
     }
     has_key = False
     if provider in key_map:
@@ -717,9 +726,15 @@ def admin_dashboard(request: Request):
     error_count = sum(1 for s in statuses.values() if isinstance(s, dict) and s.get('status') == 'error')
     untested_count = sum(1 for s in statuses.values() if isinstance(s, dict) and s.get('status') == 'untested')
 
-    # ── Per-feature provider assignments ──
-    from services.llm import get_feature_provider, get_compatible_providers, get_all_feature_assignments, PROVIDER_CAPABILITIES
-    assignments = get_all_feature_assignments()
+    # ── Provider chain for feature display ──
+    from services.llm import get_compatible_providers, _get_provider_chain, PROVIDER_CAPABILITIES, FEATURE_REQUIRED_CAPS
+
+    def _get_provider_chain_for_feature(fid: str) -> list[str]:
+        """Get the provider chain filtered by feature requirements."""
+        required = FEATURE_REQUIRED_CAPS.get(fid, ["json"])
+        # Use the first required capability to determine call_type
+        call_type = required[0] if required else "json"
+        return _get_provider_chain(call_type)
 
     # ── Build feature cards with pipeline ──
     feature_cards = ""
@@ -769,39 +784,20 @@ def admin_dashboard(request: Request):
                 {api_detail_models}
             </div>'''
 
-        # Build per-feature API assignment selector
-        assign = assignments.get(fid, {})
-        current_provider = assign.get("provider", "mock")
-        is_override = assign.get("is_override", False)
-        cur_caps = PROVIDER_CAPABILITIES.get(current_provider, {})
-        cur_name = cur_caps.get("name", current_provider.upper()) if cur_caps else current_provider.upper()
-        cur_badge_cls = "api-badge-active" if current_provider != "mock" else "api-badge-none"
-        override_tag = '<span class="api-override">✏️ 手动指定</span>' if is_override else '<span class="api-default">🔄 全局默认</span>'
-
-        # Build dropdown options — only show providers that have keys configured
-        options_html = f'<option value="default"{"" if is_override else " selected"}>🔄 使用全局默认</option>'
-        for p in compatible:
-            if not p["compatible"] or not p["has_key"]:
-                continue
-            options_html += f'<optgroup label="{p["name"]}">'
-            for model in p.get('models', []):
-                val = f'{p["id"]}:{model}'
-                sel = ' selected' if is_override and p['id'] == current_provider else ''
-                options_html += f'<option value="{p["id"]}"{sel}>  {model}</option>'
-            options_html += '</optgroup>'
+        # Show auto-allocation info instead of manual selector
+        chain = _get_provider_chain_for_feature(fid)
+        chain_names = [PROVIDER_CAPABILITIES.get(p, {}).get('name', p) for p in chain[:3]]
+        chain_display = ' → '.join(chain_names) if chain_names else '无可用 API'
 
         api_section = f'''
             <div class="api-assign-section" id="api-section-{fid}">
                 <div class="api-assign-header">
                     <span class="hiw-title">🔗 AI API 分配</span>
-                    <span class="{cur_badge_cls}">{cur_name}</span>
-                    {override_tag}
+                    <span class="api-badge-active">🤖 智能分配</span>
+                    <span class="api-default" style="font-size:.7rem;color:#94a3b8">自动故障转移</span>
                 </div>
-                <div class="api-assign-body">
-                    <select class="api-select" id="api-select-{fid}" onchange="setFeatureProvider('{fid}', this.value)">
-                        {options_html}
-                    </select>
-                    <span class="api-save-msg" id="api-msg-{fid}"></span>
+                <div style="font-size:.75rem;color:#64748b;padding:4px 0">
+                    优先级: {chain_display}
                 </div>
             </div>'''
 
@@ -927,6 +923,45 @@ def admin_dashboard(request: Request):
     </div>
     """
 
+    # ── LemonAPI — dedicated card with dropdown model selection ──
+    lemon_key = os.getenv("LEMONAPI_API_KEY", "").strip()
+    lemon_base = os.getenv("LEMONAPI_BASE_URL", "").strip()
+    lemon_model_val = os.getenv("LEMONAPI_MODEL", "").strip() or "[L]gemini-3-pro-preview"
+    lemon_selected = "selected" if provider == "lemonapi" else ""
+    lemon_status = f'<div class="key-status ok">✓ 已配置</div>' if lemon_key else f'<div class="key-status" style="color:#64748b">未配置</div>'
+    lemon_models = [
+        ("[L]gemini-3-pro-preview", "Gemini 3 Pro Preview (推荐)"),
+        ("[L]gemini-3-flash-preview-search", "Gemini 3 Flash Preview Search"),
+        ("[L]gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview"),
+        ("[L]gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ("[L]gemini-2.5-flash", "Gemini 2.5 Flash"),
+        ("[L]gemini-2.5-pro-search", "Gemini 2.5 Pro Search"),
+    ]
+    lemon_model_options = ""
+    for mid, mname in lemon_models:
+        sel = 'selected' if mid == lemon_model_val else ''
+        lemon_model_options += f'<option value="{mid}" {sel}>{mname}</option>'
+
+    api_cards += f"""
+    <div class="api-card {lemon_selected}" data-provider="lemonapi" style="border:2px solid rgba(52,211,153,.5);grid-column:1/-1;">
+        <div class="provider-name" style="font-size:1.1rem;">🍋 LemonAPI (中转Gemini)</div>
+        <div class="provider-models" style="color:#6ee7b7">通过 LemonAPI 代理访问 Gemini 全系列模型</div>
+        <div class="caps">
+            <span class="cap y">JSON ✓</span>
+            <span class="cap y">Stream ✓</span>
+            <span class="cap y">Vision ✓</span>
+        </div>
+        <input class="api-input" type="password" id="key-lemonapi" placeholder="LemonAPI Key" value="{html_mod.escape(lemon_key)}" autocomplete="off">
+        <div style="font-size:.7rem;color:#94a3b8;margin:4px 0 2px">选择模型：</div>
+        <select class="api-input" id="model-lemonapi" style="background:#1e293b;color:#e2e8f0;border:1px solid rgba(52,211,153,.3);border-radius:6px;padding:6px 8px;font-size:.8rem;cursor:pointer">
+            {lemon_model_options}
+        </select>
+        <input class="api-input" type="text" id="baseurl-lemonapi" placeholder="API Base URL（留空=默认）" value="{html_mod.escape(lemon_base)}" autocomplete="off" style="font-size:.75rem;color:#94a3b8">
+        <div style="font-size:.65rem;color:#475569;margin-top:2px">默认: https://new.lemonapi.site/v1</div>
+        {lemon_status}
+    </div>
+    """
+
     # ── Other providers ──
     for pid, pname, default_model, key_env, base_url_env, default_base_url, has_json, has_stream, has_vision in providers_info:
         key_val = os.getenv(key_env, "").strip()
@@ -967,13 +1002,13 @@ def admin_dashboard(request: Request):
             "file": "topic_generate.j2",
             "name": "📝 文章生成",
             "frontend": "话题探索 · 文章生成",
-            "user_inputs": ["话题/标签", "文章长度", "难度等级", "文章风格", "DB 复习词", "新词数量"],
+            "user_inputs": ["话题关键词", "专业方向(画像)", "涉及事件(可选)", "文章长度", "难度等级", "文章风格", "DB 复习词", "新词数量"],
         },
         {
             "file": "translation.j2",
-            "name": "🔤 翻译",
-            "frontend": "翻译工作室 · 翻译练习",
-            "user_inputs": ["原文文本", "翻译方向", "用户自译文本"],
+            "name": "🔤 翻译(全局+论文)",
+            "frontend": "翻译工作室 · 翻译练习 / 论文阅读器翻译",
+            "user_inputs": ["原文文本", "翻译方向", "用户自译文本", "画像细分专业(动态variants)", "画像兴趣标签(动态variants)"],
         },
         {
             "file": "article_analyze.j2",
@@ -1359,7 +1394,7 @@ def admin_dashboard(request: Request):
         const provider = selected ? selected.dataset.provider : '';
 
         const config = {{}};
-        ['lanyi', 'gemini', 'openai', 'qwen', 'anthropic'].forEach(p => {{
+        ['lanyi', 'lemonapi', 'gemini', 'openai', 'qwen', 'anthropic'].forEach(p => {{
             const keyEl = document.getElementById('key-' + p);
             const modelEl = document.getElementById('model-' + p);
             const baseUrlEl = document.getElementById('baseurl-' + p);
@@ -1492,32 +1527,6 @@ def admin_dashboard(request: Request):
         detail.classList.toggle('show');
         icon.classList.toggle('open');
     }}
-
-    async function setFeatureProvider(featureId, provider) {{
-        const msgEl = document.getElementById('api-msg-' + featureId);
-        msgEl.textContent = '⏳ 保存中...';
-        msgEl.style.color = '#94a3b8';
-        try {{
-            const resp = await fetch('/admin/api/set-feature-provider', {{
-                method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                credentials: 'include',
-                body: JSON.stringify({{feature_id: featureId, provider: provider}})
-            }});
-            const data = await resp.json();
-            if (data.ok) {{
-                msgEl.textContent = '✅ 已保存: ' + data.provider_name;
-                msgEl.style.color = '#4ade80';
-                setTimeout(() => {{ msgEl.textContent = ''; }}, 3000);
-            }} else {{
-                msgEl.textContent = '❌ ' + (data.error || '保存失败');
-                msgEl.style.color = '#f87171';
-            }}
-        }} catch(e) {{
-            msgEl.textContent = '❌ 网络错误';
-            msgEl.style.color = '#f87171';
-        }}
-    }}
     </script>
     """
     return HTMLResponse(_page("AI 操控中心", body))
@@ -1525,24 +1534,7 @@ def admin_dashboard(request: Request):
 
 # ── API Endpoints ────────────────────────────────────────
 
-@router.post("/api/set-feature-provider", include_in_schema=False)
-async def set_feature_provider_api(request: Request):
-    if not _check_session(request):
-        return JSONResponse({"ok": False, "error": "未登录"}, status_code=401)
-    try:
-        body = await request.json()
-        feature_id = body.get("feature_id", "")
-        provider = body.get("provider", "default")
-        from services.llm import set_feature_provider, PROVIDER_CAPABILITIES
-        ok = set_feature_provider(feature_id, provider)
-        if ok:
-            caps = PROVIDER_CAPABILITIES.get(provider, {})
-            name = caps.get("name", "全局默认") if provider != "default" else "全局默认"
-            return JSONResponse({"ok": True, "provider_name": name})
-        else:
-            return JSONResponse({"ok": False, "error": f"该 API 不兼容此功能所需的能力"})
-    except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)})
+
 
 
 @router.post("/api/test-connection", include_in_schema=False)
@@ -1598,6 +1590,13 @@ async def test_connection(request: Request):
                     'Return {"status":"ok","message":"连接成功"} exactly.',
                     max_tokens=100,
                 )
+            elif pid == "lemonapi":
+                from services.llm import _call_lemonapi_json
+                result = await _call_lemonapi_json(
+                    "You are a test assistant. Reply with a simple JSON object.",
+                    'Return {"status":"ok","message":"连接成功"} exactly.',
+                    max_tokens=100,
+                )
             else:
                 return {"name": pinfo["name"], "skipped": True, "ok": False}
 
@@ -1609,7 +1608,7 @@ async def test_connection(request: Request):
             return {"name": pinfo["name"], "ok": False, "latency_ms": latency, "error": str(exc)[:200]}
 
     # Test all providers concurrently
-    provider_order = ["lanyi", "gemini", "openai", "qwen", "anthropic"]
+    provider_order = ["lanyi", "lemonapi", "gemini", "openai", "qwen", "anthropic"]
     tasks = []
     task_pids = []
     for pid in provider_order:
@@ -1747,7 +1746,7 @@ async def save_config(request: Request):
     deletes = []  # keys to remove from .env
     if body.get("provider"):
         updates["LLM_PROVIDER"] = body["provider"]
-    for pid in ("lanyi", "gemini", "openai", "qwen", "anthropic"):
+    for pid in ("lanyi", "lemonapi", "gemini", "openai", "qwen", "anthropic"):
         key_field = f"{pid}_key"
         model_field = f"{pid}_model"
         base_url_field = f"{pid}_base_url"
@@ -2171,6 +2170,152 @@ _DB_CSS = """
 .btn-reject{padding:4px 12px;border-radius:6px;background:rgba(248,113,113,.12);color:#f87171;border:none;cursor:pointer;font-size:.75rem}
 .btn-reject:hover{background:rgba(248,113,113,.22)}
 """
+
+
+# ── Team Management Page ──────────────────────────────────
+@router.get("/team", response_class=HTMLResponse, include_in_schema=False)
+def admin_team_page(request: Request):
+    if not _check_session(request):
+        return RedirectResponse("/admin", status_code=302)
+
+    body = """
+    <div class="dash">
+        <div class="dash-header">
+            <h1>👥 团队成员管理</h1>
+            <div style="display:flex;gap:10px;align-items:center;">
+                <a href="/admin/dashboard" class="logout">← 返回仪表盘</a>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>➕ 添加成员</h2>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+                <input class="api-input" id="new-name" placeholder="姓名" autocomplete="off">
+                <input class="api-input" id="new-role" placeholder="角色/职位" autocomplete="off">
+            </div>
+            <textarea class="api-input" id="new-bio" placeholder="简介" rows="2" style="margin-top:8px;resize:vertical;width:100%;"></textarea>
+            <button class="test-btn" onclick="addMember()" style="margin-top:10px;">➕ 添加</button>
+        </div>
+
+        <div class="section" id="team-list-section">
+            <h2>📋 现有成员</h2>
+            <div class="subtitle">点击「审核通过」让成员显示在前端 · 点击「📷」上传头像照片</div>
+            <div id="team-list" style="margin-top:12px;">加载中...</div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for avatar upload -->
+    <input type="file" id="avatar-file-input" accept="image/*" style="display:none;" onchange="handleAvatarSelected(event)">
+
+    <script>
+    let _avatarTargetId = null;
+
+    async function loadMembers() {
+        const resp = await fetch('/api/admin/team-members');
+        const data = await resp.json();
+        const list = document.getElementById('team-list');
+        if (!data.members || data.members.length === 0) {
+            list.innerHTML = '<p style="color:#64748b;font-style:italic;">暂无成员</p>';
+            return;
+        }
+        list.innerHTML = data.members.map(m => `
+            <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:rgba(30,41,59,.5);border:1px solid rgba(148,163,184,.08);border-radius:12px;margin-bottom:10px;">
+                <div style="width:56px;height:56px;border-radius:50%;background:rgba(99,102,241,.15);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;border:2px solid rgba(99,102,241,.2);cursor:pointer;position:relative;" onclick="triggerAvatarUpload('${m.id}')" title="点击上传头像">
+                    ${m.avatar_url ? `<img src="${m.avatar_url}" style="width:100%;height:100%;object-fit:cover;">` : '<span style="font-size:1.2rem;">👤</span>'}
+                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);opacity:0;transition:opacity .2s;border-radius:50%;font-size:.8rem;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0'">📷</div>
+                </div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:700;color:#e2e8f0;font-size:.95rem;">${m.name || '未命名'}</div>
+                    <div style="font-size:.78rem;color:#94a3b8;">${m.role || ''}</div>
+                    <div style="font-size:.72rem;color:#64748b;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${m.bio || ''}</div>
+                </div>
+                <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;">
+                    <button onclick="triggerAvatarUpload('${m.id}')" style="padding:5px 10px;border-radius:8px;border:1px solid rgba(99,102,241,.3);background:rgba(99,102,241,.08);color:#a5b4fc;font-size:.75rem;cursor:pointer;" title="上传头像">📷 头像</button>
+                    <button onclick="toggleApprove('${m.id}', ${!m.approved})" style="padding:5px 12px;border-radius:8px;border:1px solid ${m.approved ? 'rgba(74,222,128,.3)' : 'rgba(251,191,36,.3)'};background:${m.approved ? 'rgba(74,222,128,.1)' : 'rgba(251,191,36,.1)'};color:${m.approved ? '#4ade80' : '#fbbf24'};font-size:.75rem;cursor:pointer;">${m.approved ? '✅ 已通过' : '⏳ 待审核'}</button>
+                    <button onclick="deleteMember('${m.id}')" style="padding:5px 10px;border-radius:8px;border:1px solid rgba(248,113,113,.3);background:rgba(248,113,113,.08);color:#f87171;font-size:.75rem;cursor:pointer;">🗑️</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function triggerAvatarUpload(memberId) {
+        _avatarTargetId = memberId;
+        document.getElementById('avatar-file-input').click();
+    }
+
+    async function handleAvatarSelected(event) {
+        const file = event.target.files[0];
+        if (!file || !_avatarTargetId) return;
+
+        // Validate file
+        if (!file.type.startsWith('image/')) {
+            alert('请选择图片文件');
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            alert('图片大小不能超过 5MB');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const resp = await fetch(`/api/admin/team-members/${_avatarTargetId}/avatar`, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                loadMembers();
+            } else {
+                alert('上传失败: ' + (data.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('上传失败: ' + e.message);
+        }
+
+        // Reset
+        event.target.value = '';
+        _avatarTargetId = null;
+    }
+
+    async function addMember() {
+        const name = document.getElementById('new-name').value.trim();
+        const role = document.getElementById('new-role').value.trim();
+        const bio = document.getElementById('new-bio').value.trim();
+        if (!name) { alert('请输入姓名'); return; }
+        await fetch('/api/admin/team-members', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name, role, bio})
+        });
+        document.getElementById('new-name').value = '';
+        document.getElementById('new-role').value = '';
+        document.getElementById('new-bio').value = '';
+        loadMembers();
+    }
+
+    async function toggleApprove(id, approved) {
+        await fetch(`/api/admin/team-members/${id}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({approved})
+        });
+        loadMembers();
+    }
+
+    async function deleteMember(id) {
+        if (!confirm('确定删除该成员？')) return;
+        await fetch(`/api/admin/team-members/${id}`, {method: 'DELETE'});
+        loadMembers();
+    }
+
+    loadMembers();
+    </script>
+    """
+    return HTMLResponse(_page("团队管理", body))
+
 
 
 @router.get("/database", response_class=HTMLResponse, include_in_schema=False)

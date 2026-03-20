@@ -91,7 +91,7 @@ async function renderVocabTab(container) {
   container.innerHTML = `
     <div class="sidebar-section">
       <div class="sidebar-section__header">
-        <span>📖 我的生词</span>
+        <span>📖 今日新增生词</span>
         <a href="#/vocab" class="sidebar-section__link">查看全部 →</a>
       </div>
       <div id="sidebar-vocab-list" class="sidebar-vocab-list">
@@ -101,7 +101,7 @@ async function renderVocabTab(container) {
   `;
 
   try {
-    const data = await fetchAPIGet('/vocab?limit=20&sort=created_at&order=desc');
+    const data = await fetchAPIGet('/vocab?limit=50&filter=today');
     const list = document.getElementById('sidebar-vocab-list');
     if (!list) return;
 
@@ -110,18 +110,61 @@ async function renderVocabTab(container) {
       list.innerHTML = `
         <div class="sidebar-empty">
           <div class="sidebar-empty__icon">📖</div>
-          <div class="sidebar-empty__text">还没有生词<br>阅读文章时划词添加</div>
+          <div class="sidebar-empty__text">今天还没有新增生词<br>阅读文章时划词添加</div>
         </div>
       `;
       return;
     }
 
-    list.innerHTML = items.slice(0, 15).map(w => `
-      <div class="sidebar-vocab-item">
-        <div class="sidebar-vocab-item__word">${w.word || ''}</div>
-        <div class="sidebar-vocab-item__def">${w.definition_zh || ''}</div>
+    list.innerHTML = items.map(w => `
+      <div class="sidebar-vocab-item${w.is_mastered ? ' is-mastered' : ''}" data-vocab-id="${w.id}" style="display:flex;align-items:center;gap:8px;">
+        <button class="mastery-toggle ${w.is_mastered ? 'mastery-toggle--on' : 'mastery-toggle--off'}" data-id="${w.id}" data-mastered="${w.is_mastered ? '1' : '0'}"
+          title="${w.is_mastered ? '取消掌握' : '标为已掌握'}">
+          <span class="mastery-toggle__icon">${w.is_mastered ? '✓' : ''}</span>
+        </button>
+        <div style="flex:1;min-width:0;">
+          <div class="sidebar-vocab-item__word">${w.word || ''}</div>
+          <div class="sidebar-vocab-item__def">${w.definition_zh || ''}</div>
+        </div>
       </div>
     `).join('');
+
+    // Mastery toggle click handler
+    list.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.mastery-toggle');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const currentlyMastered = btn.dataset.mastered === '1';
+      const setMastered = !currentlyMastered;
+      const row = btn.closest('.sidebar-vocab-item');
+      const iconEl = btn.querySelector('.mastery-toggle__icon');
+
+      // Loading state
+      btn.style.pointerEvents = 'none';
+      btn.classList.add('is-loading');
+      if (iconEl) iconEl.textContent = '⟳';
+
+      try {
+        await fetchAPI(`/vocab/${id}/mastery`, { is_mastered: setMastered }, { method: 'PUT' });
+        // Success — animate burst
+        btn.classList.remove('is-loading');
+        btn.classList.add('is-animating');
+        setTimeout(() => btn.classList.remove('is-animating'), 500);
+
+        btn.dataset.mastered = setMastered ? '1' : '0';
+        btn.classList.toggle('mastery-toggle--on', setMastered);
+        btn.classList.toggle('mastery-toggle--off', !setMastered);
+        btn.title = setMastered ? '取消掌握' : '标为已掌握';
+        if (iconEl) iconEl.textContent = setMastered ? '✓' : '';
+        if (row) row.classList.toggle('is-mastered', setMastered);
+        if (window.showToast) window.showToast(setMastered ? '已掌握 ✅' : '已取消掌握', 'success');
+      } catch (_err) {
+        btn.classList.remove('is-loading');
+        if (iconEl) iconEl.textContent = currentlyMastered ? '✓' : '';
+        if (window.showToast) window.showToast('操作失败', 'error');
+      }
+      btn.style.pointerEvents = '';
+    });
   } catch (_e) {
     const list = document.getElementById('sidebar-vocab-list');
     if (list) list.innerHTML = '<div class="sidebar-empty"><div class="sidebar-empty__text">加载失败</div></div>';
@@ -162,25 +205,59 @@ function renderTranslateTab(container) {
         direction: 'en_to_zh',
         style: ['literal'],
       });
-      const translations = data.translations || data.result || [];
-      if (Array.isArray(translations) && translations.length) {
-        result.innerHTML = translations.map(t => `
-          <div class="sidebar-translate-item">
-            <div class="sidebar-translate-item__style">${t.style_label || t.style || ''}</div>
-            <div class="sidebar-translate-item__text">${t.text || ''}</div>
-          </div>
-        `).join('');
-      } else if (typeof data === 'string') {
-        result.innerHTML = `<div class="sidebar-translate-item"><div class="sidebar-translate-item__text">${data}</div></div>`;
-      } else {
-        result.innerHTML = `<div class="sidebar-translate-item"><div class="sidebar-translate-item__text">${JSON.stringify(data)}</div></div>`;
+
+      let html = '';
+
+      // Render translation variants as separate cards
+      const variants = data.variants || data.translations || [];
+      if (Array.isArray(variants) && variants.length) {
+        const STYLE_COLORS = { literal: '#60a5fa', legal: '#a78bfa', plain: '#34d399' };
+        variants.forEach(v => {
+          const color = STYLE_COLORS[v.style] || 'var(--text-accent)';
+          html += `
+            <div style="margin-bottom:10px;padding:10px 12px;background:rgba(255,255,255,0.03);border-radius:10px;border-left:3px solid ${color};">
+              <div style="font-size:0.75rem;font-weight:700;color:${color};margin-bottom:4px;">${escapeTranslateHtml(v.label || v.style_label || v.style || '')}</div>
+              <div style="font-size:0.85rem;color:var(--text-primary);line-height:1.5;white-space:pre-wrap;">${escapeTranslateHtml(v.text || '')}</div>
+            </div>`;
+        });
       }
+
+      // Render key terms
+      if (data.terms && data.terms.length) {
+        html += '<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:8px;">';
+        html += '<div style="font-size:0.72rem;font-weight:600;color:var(--text-muted);margin-bottom:4px;">📚 关键术语</div>';
+        data.terms.forEach(t => {
+          html += `<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:2px;"><b>${escapeTranslateHtml(t.term || '')}</b>: ${escapeTranslateHtml(t.definition_zh || '')}</div>`;
+        });
+        html += '</div>';
+      }
+
+      // Render notes
+      if (data.notes && data.notes.length) {
+        html += '<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:8px;">';
+        html += '<div style="font-size:0.72rem;font-weight:600;color:var(--text-muted);margin-bottom:4px;">💡 翻译提示</div>';
+        data.notes.forEach(n => {
+          html += `<div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:2px;">• ${escapeTranslateHtml(n)}</div>`;
+        });
+        html += '</div>';
+      }
+
+      if (!html) {
+        html = `<div class="sidebar-translate-item"><div class="sidebar-translate-item__text">翻译完成，但无法解析结果</div></div>`;
+      }
+
+      result.innerHTML = html;
     } catch (e) {
       result.innerHTML = `<div class="sidebar-empty"><div class="sidebar-empty__text">翻译失败: ${e.message}</div></div>`;
     }
     btn.disabled = false;
     btn.textContent = '翻译';
   });
+}
+
+function escapeTranslateHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ── Notes Tab (V2.1) ──

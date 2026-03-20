@@ -52,6 +52,17 @@ async def generate_topic(req: TopicGenerateRequest, request: Request, db=Depends
     except Exception:
         pass
 
+    # V2.2: 获取用户最近文章摘要，用于防重复（≤30%）
+    previous_articles = []
+    try:
+        recent_rows = db.execute(
+            "SELECT topic, substr(result_text, 1, 300) AS preview FROM article_history ORDER BY created_at DESC LIMIT 10"
+        ).fetchall()
+        for rr in recent_rows:
+            previous_articles.append(f"Topic: {rr['topic']}\nPreview: {rr['preview']}")
+    except Exception:
+        pass
+
     # 获取用户备考目标，用于限定新词范围
     exam_type = user_profile.get("exam_type", req.target_range_id or "cet6")
 
@@ -70,7 +81,6 @@ async def generate_topic(req: TopicGenerateRequest, request: Request, db=Depends
                 "user_exam_type": exam_type,
                 "user_eng_level": user_profile.get("eng_level", ""),
             },
-            # 第 3 层: 功能参数（注入 topic_generate.j2）
             feature_params={
                 "topics": req.topics,
                 "domains": req.domains,
@@ -81,6 +91,8 @@ async def generate_topic(req: TopicGenerateRequest, request: Request, db=Depends
                 "new_word_count": req.new_word_count,
                 "exam_type": exam_type,
                 "existing_vocab": existing_vocab[:100],
+                "previous_articles": previous_articles,
+                "events": req.events or "",
             },
         )
     except Exception as e:
@@ -94,6 +106,7 @@ async def generate_topic(req: TopicGenerateRequest, request: Request, db=Depends
     srs.process_article_exposure("article_runtime_id", response.db_words_used)
 
     # ── 保存到文章历史 ──
+    article_id = None
     try:
         article_id = str(uuid.uuid4())
         db.execute(
@@ -122,7 +135,11 @@ async def generate_topic(req: TopicGenerateRequest, request: Request, db=Depends
         import logging
         logging.getLogger("xiaotiao").warning("Failed to save article history: %s", e)
 
-    return response
+    # Return response with article_id for annotation binding
+    result = response.model_dump() if hasattr(response, 'model_dump') else dict(response)
+    if article_id:
+        result["article_id"] = article_id
+    return result
 
 
 # ── 文章历史 API ──────────────────────────────────

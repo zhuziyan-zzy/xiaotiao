@@ -119,6 +119,21 @@ PROVIDER_CAPABILITIES: dict[str, dict] = {
         "default_base_url": "http://1.95.142.151:3000/v1",
         "json": True, "stream": True, "vision": True, "schema": False,
     },
+    "lemonapi": {
+        "name": "LemonAPI (中转Gemini)",
+        "models": [
+            "[L]gemini-3-pro-preview",
+            "[L]gemini-3-flash-preview-search",
+            "[L]gemini-3.1-pro-preview",
+            "[L]gemini-2.5-pro",
+        ],
+        "default_model": "[L]gemini-3-pro-preview",
+        "env_key": "LEMONAPI_API_KEY",
+        "env_model": "LEMONAPI_MODEL",
+        "env_base_url": "LEMONAPI_BASE_URL",
+        "default_base_url": "https://new.lemonapi.site/v1",
+        "json": True, "stream": True, "vision": True, "schema": False,
+    },
 }
 
 # What capability each feature requires
@@ -132,55 +147,103 @@ FEATURE_REQUIRED_CAPS: dict[str, list[str]] = {
     "paper_chat":       ["stream"],
     "paper_translate":  ["stream"],
     "paper_glossary":   ["stream"],
-    "vocab_import":     ["json"],  # vision is optional for vocab
+    "vocab_import":     ["json"],
     "concept_analysis": ["json"],
 }
 
-_FEATURE_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "feature_providers.json")
+# ── Provider health tracking ────────────────────────────
+import collections
+import logging as _logging
+_health_logger = _logging.getLogger("xiaotiao.llm.health")
+
+_COOLDOWN_SECONDS = 30  # Failed providers are skipped for this many seconds
+
+_provider_health: dict[str, dict] = {}  # {pid: {"successes": int, "failures": int, "total_latency_ms": float, "last_failure": float}}
 
 
-def _load_feature_providers() -> dict[str, str]:
-    """Load per-feature provider overrides from JSON config."""
-    try:
-        with open(_FEATURE_CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+def _record_success(pid: str, latency_ms: float) -> None:
+    """Record a successful API call for health tracking."""
+    h = _provider_health.setdefault(pid, {"successes": 0, "failures": 0, "total_latency_ms": 0.0, "last_failure": 0.0})
+    h["successes"] += 1
+    h["total_latency_ms"] += latency_ms
 
 
-def _save_feature_providers(mapping: dict[str, str]) -> None:
-    """Persist per-feature provider overrides to JSON config."""
-    with open(_FEATURE_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(mapping, f, indent=2, ensure_ascii=False)
+def _record_failure(pid: str) -> None:
+    """Record a failed API call for health tracking."""
+    h = _provider_health.setdefault(pid, {"successes": 0, "failures": 0, "total_latency_ms": 0.0, "last_failure": 0.0})
+    h["failures"] += 1
+    h["last_failure"] = time.time()
+    _health_logger.warning("Provider %s failed (total failures: %d)", pid, h["failures"])
 
 
-def get_feature_provider(feature_id: str) -> str:
-    """Get the provider for a specific feature (override or global default)."""
-    overrides = _load_feature_providers()
-    if feature_id in overrides and overrides[feature_id]:
-        provider = overrides[feature_id]
-        caps = PROVIDER_CAPABILITIES.get(provider, {})
+def _is_cooling_down(pid: str) -> bool:
+    """Check if a provider is in cooldown after a recent failure."""
+    h = _provider_health.get(pid)
+    if not h or h["last_failure"] == 0:
+        return False
+    return (time.time() - h["last_failure"]) < _COOLDOWN_SECONDS
+
+
+def _provider_score(pid: str) -> float:
+    """Score a provider: higher is better.  success_rate * 1000 - avg_latency_ms."""
+    h = _provider_health.get(pid)
+    if not h:
+        return 500.0  # Unknown providers get a neutral score
+    total = h["successes"] + h["failures"]
+    if total == 0:
+        return 500.0
+    success_rate = h["successes"] / total
+    avg_latency = h["total_latency_ms"] / max(h["successes"], 1)
+    return success_rate * 1000 - avg_latency * 0.1
+
+
+def get_provider_health_info() -> dict:
+    """Return health info for all providers (for admin dashboard)."""
+    result = {}
+    for pid, h in _provider_health.items():
+        total = h["successes"] + h["failures"]
+        result[pid] = {
+            "successes": h["successes"],
+            "failures": h["failures"],
+            "success_rate": round(h["successes"] / total * 100, 1) if total > 0 else 0,
+            "avg_latency_ms": round(h["total_latency_ms"] / max(h["successes"], 1)),
+            "cooling_down": _is_cooling_down(pid),
+        }
+    return result
+
+
+def _get_provider_chain(call_type: str) -> list[str]:
+    """Return priority-ordered list of available providers for a call type.
+
+    Ordering: preferred provider first (from LLM_PROVIDER env) → others sorted by health score.
+    Filters: must have API key, must support the call_type, must not be in cooldown.
+    """
+    preferred = _env("LLM_PROVIDER", "").lower()
+    candidates = []
+    for pid, caps in PROVIDER_CAPABILITIES.items():
+        if not caps.get(call_type, False):
+            continue
         env_key = caps.get("env_key", "")
-        if env_key and _env(env_key):
-            return provider
+        if not env_key or not _env(env_key):
+            continue
+        if _is_cooling_down(pid):
+            _health_logger.info("Skipping %s (cooling down)", pid)
+            continue
+        candidates.append(pid)
+
+    # Sort: preferred first, then by health score (descending)
+    def _sort_key(pid: str) -> tuple:
+        is_preferred = 0 if pid == preferred else 1
+        return (is_preferred, -_provider_score(pid))
+
+    candidates.sort(key=_sort_key)
+    return candidates
+
+
+# Legacy compat — keep get_feature_provider but it now just returns _llm_provider()
+def get_feature_provider(feature_id: str) -> str:
+    """Returns the preferred LLM provider (no per-feature overrides)."""
     return _llm_provider()
-
-
-def set_feature_provider(feature_id: str, provider: str) -> bool:
-    """Set provider for a feature. Returns True if compatible."""
-    if provider and provider != "default":
-        caps = PROVIDER_CAPABILITIES.get(provider, {})
-        required = FEATURE_REQUIRED_CAPS.get(feature_id, ["json"])
-        for cap in required:
-            if not caps.get(cap, False):
-                return False
-    mapping = _load_feature_providers()
-    if provider == "default" or provider == "":
-        mapping.pop(feature_id, None)
-    else:
-        mapping[feature_id] = provider
-    _save_feature_providers(mapping)
-    return True
 
 
 def get_compatible_providers(feature_id: str) -> list[dict]:
@@ -443,6 +506,21 @@ def _lanyi_model() -> str:
     return _env("LANYI_MODEL", "claude-sonnet-4-20250514")
 
 
+def _lemonapi_base_url() -> str:
+    return _env("LEMONAPI_BASE_URL", "https://new.lemonapi.site/v1").rstrip("/")
+
+
+def _lemonapi_api_key() -> str:
+    api_key = _env("LEMONAPI_API_KEY")
+    if not api_key:
+        raise RuntimeError("LEMONAPI_API_KEY 未配置。请在管理后台设置 LemonAPI Key。")
+    return api_key
+
+
+def _lemonapi_model() -> str:
+    return _env("LEMONAPI_MODEL", "[L]gemini-3-pro-preview")
+
+
 def _gemini_base_url() -> str:
     base_url = _env("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
     return base_url
@@ -528,6 +606,66 @@ async def _call_lanyi_json(system_prompt: str, user_prompt: str, max_tokens: int
         api_key=_lanyi_api_key(), base_url=_lanyi_base_url(),
         model=_lanyi_model(), label="蓝移API",
     )
+
+
+async def _call_lemonapi_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> dict:
+    return await _call_openai_compatible_json(
+        system_prompt, user_prompt, max_tokens,
+        api_key=_lemonapi_api_key(), base_url=_lemonapi_base_url(),
+        model=_lemonapi_model(), label="LemonAPI",
+    )
+
+
+async def _call_openai_compatible_vision_json(
+    system_prompt: str, user_prompt: str, base64_image: str, media_type: str,
+    max_tokens: int = 4000, *, api_key: str, base_url: str, model: str, label: str = "OpenAI"
+) -> dict:
+    """Generic OpenAI-compatible vision JSON call — used by lemonapi and lanyi providers."""
+    max_retries = 2
+    timeout_seconds = 180
+    payload = {
+        "model": model,
+        "temperature": 0.7,
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "system",
+                "content": system_prompt
+                + "\n\nIMPORTANT: Return one raw valid JSON object only. No markdown wrappers.",
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{base64_image}"}},
+                ],
+            },
+        ],
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        for attempt in range(max_retries + 1):
+            resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
+            if resp.status_code >= 400:
+                retryable = resp.status_code in {408, 409, 429, 500, 502, 503, 504}
+                if retryable and attempt < max_retries:
+                    await asyncio.sleep(0.8 * (attempt + 1))
+                    continue
+                detail = ""
+                try:
+                    err_payload = resp.json()
+                    err_obj = err_payload.get("error") if isinstance(err_payload, dict) else None
+                    detail = err_obj.get("message") if isinstance(err_obj, dict) else str(err_payload)
+                except Exception:
+                    detail = resp.text
+                raise RuntimeError(f"{label} API {resp.status_code}: {detail}")
+            data = resp.json()
+            break
+    content = _safe_openai_content(data)
+    return _robust_json_loads(content)
 
 
 async def _call_gemini_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> dict:
@@ -934,125 +1072,135 @@ async def mock_claude_json(system_prompt: str, user_prompt: str) -> dict:
     }
 
 
+async def _dispatch_stream(pid: str, system_prompt: str, user_prompt: str, max_tokens: int) -> AsyncGenerator[str, None]:
+    """Call a single provider's stream endpoint."""
+    if pid == "gemini":
+        async for text in _call_gemini_stream(system_prompt, user_prompt, max_tokens=max_tokens):
+            yield text
+    elif pid == "lanyi":
+        async for text in _call_openai_compatible_stream(
+            system_prompt, user_prompt, max_tokens,
+            api_key=_lanyi_api_key(), base_url=_lanyi_base_url(),
+            model=_lanyi_model(), label="蓝移API",
+        ):
+            yield text
+    elif pid == "lemonapi":
+        async for text in _call_openai_compatible_stream(
+            system_prompt, user_prompt, max_tokens,
+            api_key=_lemonapi_api_key(), base_url=_lemonapi_base_url(),
+            model=_lemonapi_model(), label="LemonAPI",
+        ):
+            yield text
+    elif pid == "openai":
+        async for text in _call_openai_stream(system_prompt, user_prompt, max_tokens=max_tokens):
+            yield text
+    elif pid == "anthropic" and anthropic_client:
+        async with anthropic_client.messages.stream(
+            model=_env("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219"),
+            max_tokens=max_tokens,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            temperature=0.7,
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+    elif pid == "qwen":
+        qwen_model = _env("QWEN_MODEL", "qwen-max")
+        qwen_key = _env("QWEN_API_KEY")
+        qwen_base = _env("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").rstrip("/")
+        payload = {
+            "model": qwen_model, "temperature": 0.7, "max_tokens": max_tokens, "stream": True,
+            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        }
+        headers = {"Authorization": f"Bearer {qwen_key}", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream("POST", f"{qwen_base}/chat/completions", json=payload, headers=headers) as resp:
+                if resp.status_code >= 400:
+                    detail = ""
+                    try:
+                        err_payload = await resp.json()
+                        detail = str(err_payload)
+                    except Exception:
+                        detail = await resp.aread()
+                    raise RuntimeError(f"Qwen API {resp.status_code}: {detail}")
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    chunk = line[len("data: "):].strip()
+                    if chunk == "[DONE]":
+                        return
+                    try:
+                        data = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = data.get("choices") or [{}]
+                    delta = choices[0].get("delta", {}) if choices else {}
+                    text = delta.get("content")
+                    if text:
+                        yield text
+    elif pid == "deepseek":
+        ds_model = _env("DEEPSEEK_MODEL", "deepseek-chat")
+        ds_key = _env("DEEPSEEK_API_KEY")
+        ds_base = _env("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
+        payload = {
+            "model": ds_model, "temperature": 0.7, "max_tokens": max_tokens, "stream": True,
+            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        }
+        headers = {"Authorization": f"Bearer {ds_key}", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream("POST", f"{ds_base}/chat/completions", json=payload, headers=headers) as resp:
+                if resp.status_code >= 400:
+                    detail = ""
+                    try:
+                        err_payload = await resp.json()
+                        detail = str(err_payload)
+                    except Exception:
+                        detail = await resp.aread()
+                    raise RuntimeError(f"DeepSeek API {resp.status_code}: {detail}")
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    chunk = line[len("data: "):].strip()
+                    if chunk == "[DONE]":
+                        return
+                    try:
+                        data = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = data.get("choices") or [{}]
+                    delta = choices[0].get("delta", {}) if choices else {}
+                    text = delta.get("content")
+                    if text:
+                        yield text
+    else:
+        raise RuntimeError(f"Provider {pid} does not support streaming.")
+
+
 async def call_claude_stream(system_prompt: str, user_prompt: str, max_tokens: int = 4000, feature_id: str = ""):
-    """Yield text chunks from the LLM as a generator (for StreamingResponse)."""
-    provider = get_feature_provider(feature_id) if feature_id else _llm_provider()
-
-    if provider == "mock":
-        raise RuntimeError("AI 服务未配置：当前为 Mock 模式，请在管理后台配置真实的 API Key。")
-
-    try:
-        if provider == "gemini":
-            async for text in _call_gemini_stream(system_prompt, user_prompt, max_tokens=max_tokens):
+    """Streaming LLM call with auto-fallback across providers."""
+    chain = _get_provider_chain("stream")
+    if not chain:
+        raise RuntimeError("AI 服务未配置：没有支持流式输出的可用 API，请在管理后台配置 API Key。")
+    last_error = None
+    for pid in chain:
+        t0 = time.time()
+        try:
+            had_output = False
+            async for text in _dispatch_stream(pid, system_prompt, user_prompt, max_tokens):
+                had_output = True
                 yield text
-        elif provider == "lanyi":
-            async for text in _call_openai_compatible_stream(
-                system_prompt, user_prompt, max_tokens,
-                api_key=_lanyi_api_key(), base_url=_lanyi_base_url(),
-                model=_lanyi_model(), label="蓝移API",
-            ):
-                yield text
-        elif provider == "openai":
-            async for text in _call_openai_stream(system_prompt, user_prompt, max_tokens=max_tokens):
-                yield text
-        elif provider == "anthropic" and anthropic_client:
-            async with anthropic_client.messages.stream(
-                model=_env("ANTHROPIC_MODEL", "claude-3-7-sonnet-20250219"),
-                max_tokens=max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-                temperature=0.7,
-            ) as stream:
-                async for text in stream.text_stream:
-                    yield text
-        elif provider == "qwen":
-            # Qwen DashScope uses OpenAI-compatible streaming
-            qwen_model = _env("QWEN_MODEL", "qwen-max")
-            qwen_key = _env("QWEN_API_KEY")
-            qwen_base = _env("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").rstrip("/")
-            payload = {
-                "model": qwen_model,
-                "temperature": 0.7,
-                "max_tokens": max_tokens,
-                "stream": True,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            }
-            headers = {"Authorization": f"Bearer {qwen_key}", "Content-Type": "application/json"}
-            async with httpx.AsyncClient(timeout=120) as client:
-                async with client.stream("POST", f"{qwen_base}/chat/completions", json=payload, headers=headers) as resp:
-                    if resp.status_code >= 400:
-                        detail = ""
-                        try:
-                            err_payload = await resp.json()
-                            detail = str(err_payload)
-                        except Exception:
-                            detail = await resp.aread()
-                        raise RuntimeError(f"Qwen API {resp.status_code}: {detail}")
-                    async for line in resp.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        chunk = line[len("data: "):].strip()
-                        if chunk == "[DONE]":
-                            return
-                        try:
-                            data = json.loads(chunk)
-                        except json.JSONDecodeError:
-                            continue
-                        choices = data.get("choices") or [{}]
-                        delta = choices[0].get("delta", {}) if choices else {}
-                        text = delta.get("content")
-                        if text:
-                            yield text
-        elif provider == "deepseek":
-            # DeepSeek uses OpenAI-compatible streaming
-            ds_model = _env("DEEPSEEK_MODEL", "deepseek-chat")
-            ds_key = _env("DEEPSEEK_API_KEY")
-            ds_base = _env("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
-            payload = {
-                "model": ds_model,
-                "temperature": 0.7,
-                "max_tokens": max_tokens,
-                "stream": True,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            }
-            headers = {"Authorization": f"Bearer {ds_key}", "Content-Type": "application/json"}
-            async with httpx.AsyncClient(timeout=120) as client:
-                async with client.stream("POST", f"{ds_base}/chat/completions", json=payload, headers=headers) as resp:
-                    if resp.status_code >= 400:
-                        detail = ""
-                        try:
-                            err_payload = await resp.json()
-                            detail = str(err_payload)
-                        except Exception:
-                            detail = await resp.aread()
-                        raise RuntimeError(f"DeepSeek API {resp.status_code}: {detail}")
-                    async for line in resp.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        chunk = line[len("data: "):].strip()
-                        if chunk == "[DONE]":
-                            return
-                        try:
-                            data = json.loads(chunk)
-                        except json.JSONDecodeError:
-                            continue
-                        choices = data.get("choices") or [{}]
-                        delta = choices[0].get("delta", {}) if choices else {}
-                        text = delta.get("content")
-                        if text:
-                            yield text
-        else:
-            raise RuntimeError(f"AI 服务配置错误：不支持的 Provider '{provider}'，请检查管理后台配置。")
-    except RuntimeError:
-        raise
-    except Exception as exc:
-        raise RuntimeError(f"AI 调用失败 ({provider}): {exc}") from exc
+            # Stream completed successfully
+            _record_success(pid, (time.time() - t0) * 1000)
+            return
+        except Exception as exc:
+            _record_failure(pid)
+            last_error = exc
+            _health_logger.warning("Stream call failed on %s: %s, trying next...", pid, str(exc)[:120])
+            if had_output:
+                # Already sent partial data — cannot retry cleanly
+                raise RuntimeError(f"AI 流式调用中断 ({pid}): {exc}") from exc
+            continue
+    raise RuntimeError(f"所有流式 API 均失败，最后错误: {last_error}") from last_error
 
 # ──────────────────────────────────────────────
 #  Schema-aware LLM calls — used by PromptEngine
@@ -1285,6 +1433,74 @@ def _prepare_openai_strict_schema(schema: dict) -> dict:
     return resolved
 
 
+def _build_schema_instruction(response_schema: dict) -> str:
+    """Build a human-readable JSON schema instruction to append to system prompts
+    for providers that don't support native schema constraints."""
+    schema_str = json.dumps(response_schema, indent=2, ensure_ascii=False)
+    return (
+        "\n\n## REQUIRED JSON OUTPUT FORMAT\n"
+        "You MUST return a JSON object that strictly follows this JSON Schema. "
+        "ALL fields marked as 'required' MUST be present in your response. "
+        "Do NOT omit any required field.\n\n"
+        f"```json\n{schema_str}\n```"
+    )
+
+
+# ── Internal dispatch helpers (single-provider calls) ──────────
+
+async def _dispatch_json(pid: str, system_prompt: str, user_prompt: str, max_tokens: int) -> dict:
+    """Call a single provider's JSON endpoint."""
+    if pid == "gemini":
+        return await _call_gemini_json(system_prompt, user_prompt, max_tokens=max_tokens)
+    if pid == "lanyi":
+        return await _call_lanyi_json(system_prompt, user_prompt, max_tokens=max_tokens)
+    if pid == "lemonapi":
+        return await _call_lemonapi_json(system_prompt, user_prompt, max_tokens=max_tokens)
+    if pid == "openai":
+        return await _call_openai_json(system_prompt, user_prompt, max_tokens=max_tokens)
+    if pid == "qwen":
+        return await _call_qwen_json(system_prompt, user_prompt, max_tokens=max_tokens)
+    if pid == "anthropic":
+        return await _call_anthropic_json(system_prompt, user_prompt, max_tokens=max_tokens)
+    raise RuntimeError(f"Unknown provider: {pid}")
+
+
+async def _dispatch_schema(pid: str, system_prompt: str, user_prompt: str, response_schema: dict, max_tokens: int) -> dict:
+    """Call a single provider's schema-aware endpoint."""
+    if pid == "gemini":
+        return await _call_gemini_with_schema(system_prompt, user_prompt, response_schema, max_tokens=max_tokens)
+    if pid == "openai":
+        return await _call_openai_with_schema(system_prompt, user_prompt, response_schema, max_tokens=max_tokens)
+    # For providers without native schema support, inject schema into prompt
+    enhanced = system_prompt + _build_schema_instruction(response_schema)
+    return await _dispatch_json(pid, enhanced, user_prompt, max_tokens)
+
+
+async def _dispatch_vision(pid: str, system_prompt: str, user_prompt: str, base64_image: str, media_type: str, max_tokens: int) -> dict:
+    """Call a single provider's vision endpoint."""
+    if pid == "gemini":
+        return await _call_gemini_vision_json(system_prompt, user_prompt, base64_image, media_type, max_tokens=max_tokens)
+    if pid == "qwen":
+        return await _call_qwen_vision_json(system_prompt, user_prompt, base64_image, media_type, max_tokens=max_tokens)
+    if pid == "anthropic":
+        return await _call_anthropic_vision_json(system_prompt, user_prompt, base64_image, media_type, max_tokens=max_tokens)
+    if pid == "lemonapi":
+        return await _call_openai_compatible_vision_json(
+            system_prompt, user_prompt, base64_image, media_type, max_tokens=max_tokens,
+            api_key=_lemonapi_api_key(), base_url=_lemonapi_base_url(),
+            model=_lemonapi_model(), label="LemonAPI",
+        )
+    if pid == "lanyi":
+        return await _call_openai_compatible_vision_json(
+            system_prompt, user_prompt, base64_image, media_type, max_tokens=max_tokens,
+            api_key=_lanyi_api_key(), base_url=_lanyi_base_url(),
+            model=_lanyi_model(), label="蓝移API",
+        )
+    raise RuntimeError(f"Provider {pid} does not support vision.")
+
+
+# ── Public dispatch functions with auto-fallback ──────────
+
 async def call_llm_with_schema(
     system_prompt: str,
     user_prompt: str,
@@ -1292,79 +1508,62 @@ async def call_llm_with_schema(
     max_tokens: int = 4000,
     feature_id: str = "",
 ) -> dict:
-    """
-    Schema-aware LLM call — used by PromptEngine.
-
-    - Gemini: uses native responseSchema for constrained decoding
-    - OpenAI: uses Structured Outputs (json_schema response_format)
-    - Qwen/Anthropic/Mock: falls back to existing JSON mode + _clean_json_text
-    """
-    provider = get_feature_provider(feature_id) if feature_id else _llm_provider()
-    try:
-        if provider == "gemini":
-            return await _call_gemini_with_schema(
-                system_prompt, user_prompt, response_schema, max_tokens=max_tokens
-            )
-        if provider == "lanyi":
-            return await _call_lanyi_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        if provider == "openai":
-            return await _call_openai_with_schema(
-                system_prompt, user_prompt, response_schema, max_tokens=max_tokens
-            )
-        # Qwen, Anthropic, Mock — use existing JSON mode (no native schema)
-        if provider == "qwen":
-            return await _call_qwen_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        if provider == "anthropic":
-            return await _call_anthropic_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        raise RuntimeError("AI 服务未配置：当前为 Mock 模式，请在管理后台配置真实的 API Key。")
-    except Exception as exc:
-        if _env("LLM_FALLBACK_TO_MOCK", "false").lower() in {"1", "true", "yes"}:
-            print(f"LLM schema call failed ({provider}), fallback to mock: {exc}")
-            return await mock_claude_json(system_prompt, user_prompt)
-        raise RuntimeError(f"AI 调用失败 ({provider}): {exc}") from exc
+    """Schema-aware LLM call with auto-fallback across providers."""
+    chain = _get_provider_chain("json")  # schema uses json-capable providers
+    if not chain:
+        raise RuntimeError("AI 服务未配置：没有可用的 API，请在管理后台配置 API Key。")
+    last_error = None
+    for pid in chain:
+        t0 = time.time()
+        try:
+            result = await _dispatch_schema(pid, system_prompt, user_prompt, response_schema, max_tokens)
+            _record_success(pid, (time.time() - t0) * 1000)
+            return result
+        except Exception as exc:
+            _record_failure(pid)
+            last_error = exc
+            _health_logger.warning("Schema call failed on %s: %s, trying next...", pid, str(exc)[:120])
+            continue
+    raise RuntimeError(f"所有 API 均失败，最后错误: {last_error}") from last_error
 
 
 async def call_claude_json(system_prompt: str, user_prompt: str, max_tokens: int = 4000, feature_id: str = "") -> dict:
-    provider = get_feature_provider(feature_id) if feature_id else _llm_provider()
-    try:
-        if provider == "gemini":
-            return await _call_gemini_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        if provider == "lanyi":
-            return await _call_lanyi_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        if provider == "openai":
-            return await _call_openai_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        if provider == "qwen":
-            return await _call_qwen_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        if provider == "anthropic":
-            return await _call_anthropic_json(system_prompt, user_prompt, max_tokens=max_tokens)
-        raise RuntimeError("AI 服务未配置：当前为 Mock 模式，请在管理后台配置真实的 API Key。")
-    except Exception as exc:
-        if _env("LLM_FALLBACK_TO_MOCK", "false").lower() in {"1", "true", "yes"}:
-            print(f"LLM call failed ({provider}), fallback to mock: {exc}")
-            return await mock_claude_json(system_prompt, user_prompt)
-        raise RuntimeError(f"AI 调用失败 ({provider}): {exc}") from exc
+    """JSON LLM call with auto-fallback across providers."""
+    chain = _get_provider_chain("json")
+    if not chain:
+        raise RuntimeError("AI 服务未配置：没有可用的 API，请在管理后台配置 API Key。")
+    last_error = None
+    for pid in chain:
+        t0 = time.time()
+        try:
+            result = await _dispatch_json(pid, system_prompt, user_prompt, max_tokens)
+            _record_success(pid, (time.time() - t0) * 1000)
+            return result
+        except Exception as exc:
+            _record_failure(pid)
+            last_error = exc
+            _health_logger.warning("JSON call failed on %s: %s, trying next...", pid, str(exc)[:120])
+            continue
+    raise RuntimeError(f"所有 API 均失败，最后错误: {last_error}") from last_error
 
 
 async def call_claude_vision_json(
     system_prompt: str, user_prompt: str, base64_image: str, media_type: str, max_tokens: int = 4000, feature_id: str = ""
 ) -> dict:
-    provider = get_feature_provider(feature_id) if feature_id else _llm_provider()
-    try:
-        if provider == "gemini":
-            return await _call_gemini_vision_json(
-                system_prompt, user_prompt, base64_image, media_type, max_tokens=max_tokens
-            )
-        if provider == "qwen":
-            return await _call_qwen_vision_json(system_prompt, user_prompt, base64_image, media_type, max_tokens=max_tokens)
-        if provider == "anthropic":
-            return await _call_anthropic_vision_json(
-                system_prompt, user_prompt, base64_image, media_type, max_tokens=max_tokens
-            )
-        if provider == "openai":
-            raise RuntimeError("OpenAI vision is not configured for this project.")
-        raise RuntimeError("AI 服务未配置：当前为 Mock 模式，请在管理后台配置真实的 API Key。")
-    except Exception as exc:
-        if _env("LLM_FALLBACK_TO_MOCK", "false").lower() in {"1", "true", "yes"}:
-            print(f"LLM vision call failed ({provider}), fallback to mock: {exc}")
-            return await mock_claude_json(system_prompt, user_prompt)
-        raise RuntimeError(f"AI 视觉调用失败 ({provider}): {exc}") from exc
+    """Vision LLM call with auto-fallback across providers."""
+    chain = _get_provider_chain("vision")
+    if not chain:
+        raise RuntimeError("AI 服务未配置：没有支持视觉的可用 API，请在管理后台配置 API Key。")
+    last_error = None
+    for pid in chain:
+        t0 = time.time()
+        try:
+            result = await _dispatch_vision(pid, system_prompt, user_prompt, base64_image, media_type, max_tokens)
+            _record_success(pid, (time.time() - t0) * 1000)
+            return result
+        except Exception as exc:
+            _record_failure(pid)
+            last_error = exc
+            _health_logger.warning("Vision call failed on %s: %s, trying next...", pid, str(exc)[:120])
+            continue
+    raise RuntimeError(f"所有视觉 API 均失败，最后错误: {last_error}") from last_error

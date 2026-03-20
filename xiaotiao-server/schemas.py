@@ -13,6 +13,7 @@ class TopicGenerateRequest(BaseModel):
     new_word_count: int = Field(default=5, ge=0, le=20)
     target_range_id: str = "cet6"
     db_words: List[str] = Field(default_factory=list)
+    events: str = Field(default="", description="涉及事件：文章中应涉及的真实案例或场景")
 
     @field_validator('topics')
     @classmethod

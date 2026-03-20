@@ -77,8 +77,23 @@
 {% endif %}
 - 需引入的新领域词汇数量：{{ new_word_count | default(5) }}
 
+{% if events %}
+- 涉及事件要求：文章中必须引用以下真实案例或场景作为说明文章主题的例子：
+{{ events }}
+{% endif %}
+
+{% if previous_articles %}
+⚠️ 防重复要求（必须严格遵守）：
+- 用户之前已经生成过以下文章，你的新文章与下列任何一篇的内容重复率不得超过 30%。
+- 必须使用不同的切入点、案例、句式和论述角度。
+- 不要重复使用相同的段落结构和关键论点。
+{% for prev in previous_articles %}
+--- 历史文章 {{ loop.index }} ---
+{{ prev }}
+{% endfor %}
+{% endif %}
+
 {% if rag_context %}
 参考上下文（在合适处引用）：
 {{ rag_context }}
 {% endif %}
-

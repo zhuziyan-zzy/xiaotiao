@@ -4,7 +4,6 @@ import io
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import text
 from db.database import get_db
 
 router = APIRouter(prefix="/notes", tags=["笔记"])
@@ -21,18 +20,18 @@ def list_notes(
     db=Depends(get_db),
 ):
     rows = db.execute(
-        text("SELECT * FROM notes WHERE module = :m AND ref_id = :r ORDER BY created_at DESC"),
-        {"m": module, "r": ref_id},
+        "SELECT * FROM notes WHERE module = ? AND ref_id = ? ORDER BY created_at DESC",
+        (module, ref_id),
     ).fetchall()
     return {
         "items": [
             {
-                "id": r.id,
-                "module": r.module,
-                "ref_id": r.ref_id,
-                "content": r.content,
-                "created_at": r.created_at,
-                "updated_at": r.updated_at,
+                "id": r['id'],
+                "module": r['module'],
+                "ref_id": r['ref_id'],
+                "content": r['content'],
+                "created_at": r['created_at'],
+                "updated_at": r['updated_at'],
             }
             for r in rows
         ]
@@ -51,23 +50,23 @@ def recent_notes(
 ):
     if module:
         rows = db.execute(
-            text("SELECT * FROM notes WHERE module = :m ORDER BY updated_at DESC LIMIT :lim"),
-            {"m": module, "lim": limit},
+            "SELECT * FROM notes WHERE module = ? ORDER BY updated_at DESC LIMIT ?",
+            (module, limit),
         ).fetchall()
     else:
         rows = db.execute(
-            text("SELECT * FROM notes ORDER BY updated_at DESC LIMIT :lim"),
-            {"lim": limit},
+            "SELECT * FROM notes ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
         ).fetchall()
     return {
         "items": [
             {
-                "id": r.id,
-                "module": r.module,
-                "ref_id": r.ref_id,
-                "content": r.content,
-                "created_at": r.created_at,
-                "updated_at": r.updated_at,
+                "id": r['id'],
+                "module": r['module'],
+                "ref_id": r['ref_id'],
+                "content": r['content'],
+                "created_at": r['created_at'],
+                "updated_at": r['updated_at'],
             }
             for r in rows
         ]
@@ -88,11 +87,8 @@ def create_note(body: dict, db=Depends(get_db)):
     note_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
     db.execute(
-        text("""
-            INSERT INTO notes (id, module, ref_id, content, created_at, updated_at)
-            VALUES (:id, :m, :r, :c, :now, :now)
-        """),
-        {"id": note_id, "m": module, "r": ref_id, "c": content, "now": now},
+        "INSERT INTO notes (id, module, ref_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (note_id, module, ref_id, content, now, now),
     )
     db.commit()
     return {"id": note_id, "module": module, "ref_id": ref_id, "content": content, "created_at": now}
@@ -107,11 +103,11 @@ def update_note(note_id: str, body: dict, db=Depends(get_db)):
     if not content:
         raise HTTPException(status_code=400, detail="content 不能为空")
     now = datetime.now().isoformat()
-    res = db.execute(
-        text("UPDATE notes SET content = :c, updated_at = :now WHERE id = :id"),
-        {"c": content, "now": now, "id": note_id},
+    cursor = db.execute(
+        "UPDATE notes SET content = ?, updated_at = ? WHERE id = ?",
+        (content, now, note_id),
     )
-    if res.rowcount == 0:
+    if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="笔记不存在")
     db.commit()
     return {"status": "ok", "id": note_id}
@@ -122,8 +118,8 @@ def update_note(note_id: str, body: dict, db=Depends(get_db)):
     summary="删除笔记",
 )
 def delete_note(note_id: str, db=Depends(get_db)):
-    res = db.execute(text("DELETE FROM notes WHERE id = :id"), {"id": note_id})
-    if res.rowcount == 0:
+    cursor = db.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+    if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="笔记不存在")
     db.commit()
     return {"status": "ok"}
@@ -145,20 +141,20 @@ def export_notes(
     except ImportError:
         raise HTTPException(status_code=500, detail="服务器未安装 python-docx")
 
-    params = {}
+    params = []
     sql = "SELECT * FROM notes"
     conditions = []
     if module:
-        conditions.append("module = :m")
-        params["m"] = module
+        conditions.append("module = ?")
+        params.append(module)
     if ref_id:
-        conditions.append("ref_id = :r")
-        params["r"] = ref_id
+        conditions.append("ref_id = ?")
+        params.append(ref_id)
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY created_at DESC"
 
-    rows = db.execute(text(sql), params).fetchall()
+    rows = db.execute(sql, params).fetchall()
     if not rows:
         raise HTTPException(status_code=404, detail="没有可导出的笔记")
 
@@ -167,11 +163,11 @@ def export_notes(
 
     MODULE_LABELS = {"article": "文章", "translation": "翻译", "vocab": "词汇", "paper": "论文"}
     for r in rows:
-        label = MODULE_LABELS.get(r.module, r.module)
-        doc.add_heading(f"[{label}] {r.ref_id[:8]}...", level=2)
-        p = doc.add_paragraph(r.content)
+        label = MODULE_LABELS.get(r['module'], r['module'])
+        doc.add_heading(f"[{label}] {r['ref_id'][:8]}...", level=2)
+        p = doc.add_paragraph(r['content'])
         p.style.font.size = Pt(11)
-        doc.add_paragraph(f"创建: {r.created_at}  更新: {r.updated_at}").italic = True
+        doc.add_paragraph(f"创建: {r['created_at']}  更新: {r['updated_at']}").italic = True
         doc.add_paragraph("")  # spacer
 
     buf = io.BytesIO()

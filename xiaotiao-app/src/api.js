@@ -77,7 +77,7 @@ async function requestJSON({ endpoint, method = 'POST', payload, timeoutMs, retr
 export async function fetchAPI(endpoint, payload, options = {}) {
     return await requestJSON({
         endpoint,
-        method: 'POST',
+        method: options.method || 'POST',
         payload,
         timeoutMs: options.timeoutMs ?? TIMEOUTS.defaultPost,
         retries: options.retries ?? 1,
@@ -105,7 +105,8 @@ export async function generateTopic(params) {
         db_word_count: params.dbWords ?? 8,
         new_word_count: params.newWords ?? 5,
         target_range_id: 'cet6',
-        db_words: []
+        db_words: [],
+        events: params.events || '',
     };
 
     return await fetchAPI('/topic/generate', payload, {

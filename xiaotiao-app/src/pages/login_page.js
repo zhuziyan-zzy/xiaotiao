@@ -81,9 +81,16 @@ export function initLoginPage() {
     loginBtn.textContent = '登录中...';
     try {
       await login(username, password);
+      // 登录成功后从后端获取 profile 并缓存
+      try {
+        const { fetchAPIGet } = await import('../api.js');
+        const profileData = await fetchAPIGet('/user/profile');
+        if (profileData?.profile) {
+          localStorage.setItem('zaiyi_profile', JSON.stringify(profileData.profile));
+        }
+      } catch (_e) { /* profile fetch failure is non-blocking */ }
       window.showToast('登录成功', 'success');
       window.location.hash = '#/home';
-      window.location.reload();
     } catch (err) {
       window.showToast(err.message || '登录失败', 'error');
     } finally {
@@ -104,9 +111,8 @@ export function initLoginPage() {
     registerBtn.textContent = '创建中...';
     try {
       await register(username, password);
-      window.showToast('注册成功，已自动登录', 'success');
-      window.location.hash = '#/home';
-      window.location.reload();
+      window.showToast('注册成功，请完成初始设置', 'success');
+      window.location.hash = '#/onboarding';
     } catch (err) {
       window.showToast(err.message || '注册失败', 'error');
     } finally {

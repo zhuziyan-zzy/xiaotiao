@@ -146,8 +146,29 @@ CREATE TABLE IF NOT EXISTS papers (
     insight     TEXT,
     tags        TEXT,
     is_favorite INTEGER DEFAULT 0,
+    pages_read  INTEGER DEFAULT 0,
+    total_pages INTEGER DEFAULT 0,
+    read_status TEXT DEFAULT 'unread',
+    folder_id   TEXT,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 论文文件夹
+CREATE TABLE IF NOT EXISTS paper_folders (
+    id        TEXT PRIMARY KEY,
+    name      TEXT NOT NULL,
+    parent_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 阅读日志
+CREATE TABLE IF NOT EXISTS reading_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id   TEXT NOT NULL,
+    pages_read INTEGER DEFAULT 0,
+    read_date  DATE DEFAULT (date('now')),
+    FOREIGN KEY (paper_id) REFERENCES papers(id) ON DELETE CASCADE
 );
 
 -- 论文批注
@@ -159,6 +180,7 @@ CREATE TABLE IF NOT EXISTS paper_annotations (
     note          TEXT,
     page_number   INTEGER,
     position      TEXT,
+    color         TEXT,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (paper_id) REFERENCES papers(id) ON DELETE CASCADE
 );
@@ -200,6 +222,20 @@ CREATE TABLE IF NOT EXISTS topic_papers (
     status        TEXT DEFAULT 'pending',
     discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+);
+
+-- 通用标注/批注（跨功能：文章、翻译、论文等）
+CREATE TABLE IF NOT EXISTS content_annotations (
+    id                TEXT PRIMARY KEY,
+    content_type      TEXT NOT NULL,
+    content_id        TEXT NOT NULL,
+    type              TEXT NOT NULL DEFAULT 'highlight',
+    selected_text     TEXT,
+    note              TEXT,
+    color             TEXT,
+    text_offset_start INTEGER,
+    text_offset_end   INTEGER,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 论文对话记录

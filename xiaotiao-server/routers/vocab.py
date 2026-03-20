@@ -2,14 +2,17 @@ import uuid
 import os
 import base64
 import csv
+import asyncio
 from io import BytesIO, StringIO
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from typing import List, Optional, Dict, Any
 from db.database import get_db
+from db.auth_db import get_user_profile
 from schemas_vocab import VocabItemCreate, VocabItemUpdate, VocabItemResponse, VocabStatsResponse, VocabListResponse
 from services.llm import call_claude_json, call_claude_vision_json
+from fastapi import Request as FastAPIRequest
 
 router = APIRouter(prefix="/vocab", tags=["生词本"])
 
@@ -252,6 +255,250 @@ def create_vocab(item: VocabItemCreate, db = Depends(get_db)):
         "is_mastered": False
     }
 
+
+# ══════════════════════════════════════════════
+# SCOPE WORDS — 备考范围词表 (MUST be before /{vocab_id} wildcard)
+# ══════════════════════════════════════════════
+
+@router.get(
+    "/scope-words",
+    summary="备考范围词表",
+    description="返回用户在备考范围内的词汇掌握情况。",
+)
+def get_scope_words(
+    request: FastAPIRequest,
+    page: int = Query(1, ge=1),
+    limit: int = Query(30, ge=1, le=100),
+    search: str = None,
+    status_filter: str = None,
+    db=Depends(get_db),
+):
+    # Get exam type from profile
+    exam_type = "cet6"
+    try:
+        user = getattr(request.state, "user", None)
+        if user:
+            profile = get_user_profile(user["id"])
+            exam_type = profile.get("exam_type", "cet6") or "cet6"
+    except Exception:
+        pass
+
+    range_row = db.execute(
+        "SELECT id, display_name, total_count FROM target_ranges WHERE id = ?",
+        (exam_type,)
+    ).fetchone()
+    range_name = range_row["display_name"] if range_row else exam_type
+    target_total = int(range_row["total_count"]) if range_row else 0
+
+    # Build query for all user vocab items with mastery status
+    where_parts = ["1=1"]
+    params = {}
+
+    if search:
+        where_parts.append("v.word LIKE :search")
+        params["search"] = f"%{search}%"
+
+    if status_filter == "mastered":
+        where_parts.append("s.is_mastered = 1")
+    elif status_filter == "unlearned":
+        where_parts.append("(s.is_mastered = 0 OR s.is_mastered IS NULL)")
+
+    where_clause = " AND ".join(where_parts)
+
+    # Count
+    count_sql = f"""
+        SELECT COUNT(*) FROM vocabulary_items v
+        LEFT JOIN vocabulary_srs_states s ON s.vocab_id = v.id
+        WHERE {where_clause}
+    """
+    count_row = db.execute(text(count_sql), params).fetchone()
+    total = int(count_row[0]) if count_row else 0
+    total_pages = max(1, (total + limit - 1) // limit)
+    offset = (page - 1) * limit
+    params["lim"] = limit
+    params["off"] = offset
+
+    rows = db.execute(text(f"""
+        SELECT v.id, v.word, v.definition_zh,
+               s.is_mastered, s.traversal_count
+        FROM vocabulary_items v
+        LEFT JOIN vocabulary_srs_states s ON s.vocab_id = v.id
+        WHERE {where_clause}
+        ORDER BY v.created_at DESC
+        LIMIT :lim OFFSET :off
+    """), params).fetchall()
+
+    items = []
+    for r in rows:
+        status = "learned"
+        if r["is_mastered"]:
+            status = "mastered"
+        items.append({
+            "word": r["word"],
+            "frequency_rank": None,
+            "definition_zh": r["definition_zh"] or "",
+            "status": status,
+            "vocab_id": r["id"],
+        })
+
+    # Summary counts
+    summary = db.execute(text("""
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN s.is_mastered = 1 THEN 1 ELSE 0 END) as mastered
+        FROM vocabulary_items v
+        LEFT JOIN vocabulary_srs_states s ON s.vocab_id = v.id
+    """)).fetchone()
+
+    learned_total = int(summary["total"] or 0) if summary else 0
+    mastered_total = int(summary["mastered"] or 0) if summary else 0
+
+    return {
+        "range_id": exam_type,
+        "range_name": range_name,
+        "target_total": target_total,
+        "total": total,
+        "learned": learned_total,
+        "mastered": mastered_total,
+        "items": items,
+        "page": page,
+        "total_pages": total_pages,
+    }
+
+
+# ══════════════════════════════════════════════
+# AI DOMAIN CLASSIFICATION (MUST be before /{vocab_id} wildcard)
+# ══════════════════════════════════════════════
+
+_classify_tasks: Dict[str, Dict[str, Any]] = {}
+
+CLASSIFY_PROMPT = """你是一个专业英语词汇分类专家。请将以下英语词汇按照专业使用场景分类。
+
+每个词可以属于多个专业领域。对每个词，返回它适用的专业领域列表，以及在每个领域下的专业含义。
+
+可选领域包括：
+- international-law (国际法)
+- commercial-law (商法)
+- constitutional-law (宪法学)
+- criminal-law (刑法学)
+- ip-law (知识产权法)
+- financial-law (金融法)
+- environmental-law (环境法)
+- administrative-law (行政法)
+- civil-law (民法)
+- procedural-law (诉讼法)
+- finance (金融)
+- cs (计算机)
+- medicine (医学)
+- general (通用)
+
+请严格按 JSON 格式返回：
+{
+  "results": [
+    {
+      "word": "jurisdiction",
+      "domains": [
+        {"id": "international-law", "definition": "管辖权，司法管辖范围"},
+        {"id": "procedural-law", "definition": "管辖权，法院审理案件的权限"}
+      ]
+    }
+  ]
+}
+
+仅返回 JSON，不要额外解释。"""
+
+
+@router.get(
+    "/classify-status",
+    summary="分类进度",
+)
+def get_classify_status(db=Depends(get_db)):
+    try:
+        total = db.execute(text("SELECT COUNT(*) FROM vocabulary_items")).fetchone()[0] or 0
+        classified = db.execute(
+            text("SELECT COUNT(DISTINCT vocab_id) FROM vocab_domain_tags")
+        ).fetchone()[0] or 0
+    except Exception:
+        return {"total": 0, "classified": 0, "pending": 0}
+    return {
+        "total": int(total),
+        "classified": int(classified),
+        "pending": int(total) - int(classified),
+    }
+
+
+@router.post(
+    "/classify",
+    summary="AI词汇分类",
+)
+async def classify_vocab(body: dict = {}, db=Depends(get_db)):
+    batch_size = min(body.get("batch_size", 30), 50)
+
+    rows = db.execute(text("""
+        SELECT v.id, v.word, v.definition_zh
+        FROM vocabulary_items v
+        WHERE v.id NOT IN (SELECT DISTINCT vocab_id FROM vocab_domain_tags)
+        LIMIT :lim
+    """), {"lim": batch_size}).fetchall()
+
+    if not rows:
+        return {"status": "done", "classified": 0, "message": "所有词汇已分类完成"}
+
+    words_list = [{"id": r["id"], "word": r["word"], "definition_zh": r["definition_zh"] or ""} for r in rows]
+    words_text = "\n".join(f"- {w['word']} ({w['definition_zh']})" for w in words_list)
+
+    try:
+        result = await call_claude_json(
+            CLASSIFY_PROMPT,
+            f"请对以下 {len(words_list)} 个词汇进行专业领域分类：\n{words_text}",
+            max_tokens=4000,
+            feature_id="vocab_classify",
+        )
+
+        classified_count = 0
+        ai_results = result.get("results", [])
+        word_id_map = {w["word"].lower(): w["id"] for w in words_list}
+
+        for item in ai_results:
+            word = item.get("word", "").strip()
+            vid = word_id_map.get(word.lower())
+            if not vid:
+                continue
+            for d in item.get("domains", []):
+                domain_id = d.get("id", "").strip()
+                definition = d.get("definition", "").strip()
+                if not domain_id:
+                    continue
+                try:
+                    db.execute(text("""
+                        INSERT OR REPLACE INTO vocab_domain_tags (vocab_id, domain, definition_in_domain, classified_by)
+                        VALUES (:vid, :dom, :defn, 'ai')
+                    """), {"vid": vid, "dom": domain_id, "defn": definition})
+                    classified_count += 1
+                except Exception:
+                    pass
+
+        db.commit()
+
+        total = db.execute(text("SELECT COUNT(*) FROM vocabulary_items")).fetchone()[0] or 0
+        done = db.execute(text("SELECT COUNT(DISTINCT vocab_id) FROM vocab_domain_tags")).fetchone()[0] or 0
+
+        return {
+            "status": "ok",
+            "classified_words": len(ai_results),
+            "classified_tags": classified_count,
+            "progress": {
+                "total": int(total),
+                "classified": int(done),
+                "pending": int(total) - int(done),
+            },
+        }
+    except Exception as e:
+        import logging
+        logging.getLogger("xiaotiao").error("Classify error: %s", e)
+        raise HTTPException(status_code=500, detail=f"AI 分类失败：{str(e)}")
+
+
 @router.put(
     "/{vocab_id}",
     response_model=dict,
@@ -405,22 +652,45 @@ async def concept_analysis(req: dict):
         logging.getLogger("xiaotiao").error("Concept analysis error: %s", e)
         raise HTTPException(status_code=500, detail=f"AI 解析失败：{str(e)}")
 
-@router.post(
-    "/import-file",
-    summary="导入词汇文件",
-    description="上传文件（txt/md/csv/xlsx/docx/图片）自动识别并提取词汇列表。",
-)
-async def import_vocab_file(
-    file: UploadFile = File(...),
-    domain: str = Form("general"),
-):
-    """Parse uploaded file and return extracted vocabulary words for preview."""
-    contents = await file.read()
-    filename = (file.filename or "unknown").lower()
 
+# ── 异步任务系统 ──────────────────────────────────
+# 内存中存储任务状态（单机足够，无需 Redis）
+_import_tasks: Dict[str, Dict[str, Any]] = {}
+_CHUNK_SIZE = 5000  # 每个 chunk 最大字符数
+_MAX_CHUNKS = 20    # 最大 chunk 数量
+
+
+def _split_text_into_chunks(text: str, chunk_size: int = _CHUNK_SIZE) -> List[str]:
+    """将长文本按段落边界分割成多个 chunk。"""
+    if len(text) <= chunk_size:
+        return [text]
+
+    chunks = []
+    lines = text.split('\n')
+    current_chunk = []
+    current_len = 0
+
+    for line in lines:
+        line_len = len(line) + 1  # +1 for newline
+        if current_len + line_len > chunk_size and current_chunk:
+            chunks.append('\n'.join(current_chunk))
+            current_chunk = [line]
+            current_len = line_len
+        else:
+            current_chunk.append(line)
+            current_len += line_len
+
+    if current_chunk:
+        chunks.append('\n'.join(current_chunk))
+
+    # 限制最大 chunk 数
+    return chunks[:_MAX_CHUNKS]
+
+
+def _extract_file_content(contents: bytes, filename: str) -> str:
+    """从文件中提取文本内容（同步，不涉及 LLM）。"""
     extracted_text = ""
 
-    # --- Text-based files ---
     if filename.endswith((".txt", ".md")):
         try:
             extracted_text = contents.decode("utf-8")
@@ -467,59 +737,192 @@ async def import_vocab_file(
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"解析 Word 文档失败：{str(e)}")
 
-    elif filename.endswith((".png", ".jpg", ".jpeg")):
-        # Use vision model for images
+    return extracted_text
+
+
+async def _process_chunk(chunk: str, domain: str, chunk_index: int, total_chunks: int) -> List[dict]:
+    """用 LLM 处理单个文本块，提取词汇。"""
+    user_prompt = (
+        f"Domain focus: {domain}\n"
+        f"This is chunk {chunk_index + 1} of {total_chunks}.\n\n"
+        f"Please extract English vocabulary words from the following content:\n\n{chunk}"
+    )
+    try:
+        data = await call_claude_json(
+            VOCAB_IMPORT_SYSTEM_PROMPT, user_prompt,
+            max_tokens=4000, feature_id="vocab_import"
+        )
+        words = data.get("words", [])
+        return [
+            {
+                "word": w.get("word", ""),
+                "definition_zh": w.get("definition_zh", ""),
+                "part_of_speech": w.get("part_of_speech", "n."),
+                "example_sentence": w.get("example_sentence", ""),
+            }
+            for w in words if w.get("word", "").strip()
+        ]
+    except Exception as e:
+        import logging
+        logging.getLogger("xiaotiao").warning("Chunk %d extraction failed: %s", chunk_index, e)
+        return []
+
+
+def _deduplicate_words(all_words: List[dict]) -> List[dict]:
+    """按 word 去重，保留第一次出现的条目。"""
+    seen = set()
+    result = []
+    for w in all_words:
+        key = w["word"].lower().strip()
+        if key and key not in seen:
+            seen.add(key)
+            result.append(w)
+    return result
+
+
+async def _run_import_task(task_id: str, extracted_text: str, domain: str):
+    """后台任务：分块处理文本并提取词汇。"""
+    task = _import_tasks[task_id]
+    try:
+        chunks = _split_text_into_chunks(extracted_text)
+        task["total_chunks"] = len(chunks)
+        task["status"] = "processing"
+        task["message"] = f"正在提取词汇 (0/{len(chunks)})"
+
+        all_words = []
+        for i, chunk in enumerate(chunks):
+            task["current_chunk"] = i + 1
+            task["progress"] = int((i / len(chunks)) * 100)
+            task["message"] = f"正在提取词汇 ({i + 1}/{len(chunks)})"
+
+            words = await _process_chunk(chunk, domain, i, len(chunks))
+            all_words.extend(words)
+
+        # 去重
+        unique_words = _deduplicate_words(all_words)
+        task["status"] = "done"
+        task["progress"] = 100
+        task["words"] = unique_words
+        task["message"] = f"提取完成，共 {len(unique_words)} 个词汇"
+    except Exception as e:
+        task["status"] = "error"
+        task["error"] = str(e)
+        task["message"] = f"提取失败：{str(e)}"
+
+
+async def _run_image_import_task(task_id: str, base64_image: str, media_type: str, domain: str):
+    """后台任务：图片识别词汇。"""
+    task = _import_tasks[task_id]
+    try:
+        task["status"] = "processing"
+        task["progress"] = 30
+        task["message"] = "AI 正在识别图片中的词汇..."
+
+        data = await call_claude_vision_json(
+            system_prompt=VOCAB_IMPORT_SYSTEM_PROMPT,
+            user_prompt=f"Domain focus: {domain}\n\nPlease extract all English vocabulary words visible in this image.",
+            base64_image=base64_image,
+            media_type=media_type,
+            max_tokens=4000,
+            feature_id="vocab_import",
+        )
+        words = data.get("words", [])
+        result = [
+            {
+                "word": w.get("word", ""),
+                "definition_zh": w.get("definition_zh", ""),
+                "part_of_speech": w.get("part_of_speech", "n."),
+                "example_sentence": w.get("example_sentence", ""),
+            }
+            for w in words if w.get("word", "").strip()
+        ]
+        task["status"] = "done"
+        task["progress"] = 100
+        task["words"] = result
+        task["message"] = f"提取完成，共 {len(result)} 个词汇"
+    except Exception as e:
+        task["status"] = "error"
+        task["error"] = str(e)
+        task["message"] = f"图片识别失败：{str(e)}"
+
+
+@router.post(
+    "/import-file",
+    summary="导入词汇文件（异步）",
+    description="上传文件后立即返回 task_id，前端轮询 /vocab/import-task/{task_id} 获取进度。",
+)
+async def import_vocab_file(
+    file: UploadFile = File(...),
+    domain: str = Form("general"),
+):
+    """Parse uploaded file and start async extraction task."""
+    contents = await file.read()
+    filename = (file.filename or "unknown").lower()
+
+    task_id = str(uuid.uuid4())
+    _import_tasks[task_id] = {
+        "status": "pending",
+        "progress": 0,
+        "current_chunk": 0,
+        "total_chunks": 1,
+        "words": [],
+        "error": None,
+        "message": "正在准备...",
+        "created_at": datetime.now().isoformat(),
+    }
+
+    # 图片文件：走 vision 模型
+    if filename.endswith((".png", ".jpg", ".jpeg")):
         base64_image = base64.b64encode(contents).decode("utf-8")
         media_type = "image/png" if filename.endswith(".png") else "image/jpeg"
-        try:
-            data = await call_claude_vision_json(
-                system_prompt=VOCAB_IMPORT_SYSTEM_PROMPT,
-                user_prompt=f"Domain focus: {domain}\n\nPlease extract all English vocabulary words visible in this image. If it's a word list, screenshot of a textbook, or vocabulary card, extract all words with their definitions.",
-                base64_image=base64_image,
-                media_type=media_type,
-                max_tokens=4000,
-                feature_id="vocab_import",
-            )
-            words = data.get("words", [])
-            # Normalize each word entry
-            result = []
-            for w in words:
-                result.append({
-                    "word": w.get("word", ""),
-                    "definition_zh": w.get("definition_zh", ""),
-                    "part_of_speech": w.get("part_of_speech", "n."),
-                    "example_sentence": w.get("example_sentence", ""),
-                })
-            return {"words": result}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"图片识别失败：{str(e)}")
-    else:
+        asyncio.create_task(_run_image_import_task(task_id, base64_image, media_type, domain))
+        return {"task_id": task_id}
+
+    # 文本类文件：提取文本内容
+    if not filename.endswith((".txt", ".md", ".csv", ".xlsx", ".xls", ".docx", ".doc")):
         raise HTTPException(
             status_code=400,
             detail="不支持的文件格式。支持：.txt, .md, .csv, .xlsx, .xls, .docx, .doc, .png, .jpg, .jpeg",
         )
 
-    # For text-based content, use LLM to extract words
+    extracted_text = _extract_file_content(contents, filename)
     if not extracted_text.strip():
         raise HTTPException(status_code=400, detail="文件内容为空。")
 
-    truncated = extracted_text[:6000]
-    user_prompt = f"Domain focus: {domain}\n\nPlease extract English vocabulary words from the following content:\n\n{truncated}"
+    _import_tasks[task_id]["message"] = f"文件已解析，共 {len(extracted_text)} 字符，开始提取..."
+    asyncio.create_task(_run_import_task(task_id, extracted_text, domain))
+    return {"task_id": task_id}
 
-    try:
-        data = await call_claude_json(VOCAB_IMPORT_SYSTEM_PROMPT, user_prompt, max_tokens=4000, feature_id="vocab_import")
-        words = data.get("words", [])
-        result = []
-        for w in words:
-            result.append({
-                "word": w.get("word", ""),
-                "definition_zh": w.get("definition_zh", ""),
-                "part_of_speech": w.get("part_of_speech", "n."),
-                "example_sentence": w.get("example_sentence", ""),
-            })
-        return {"words": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 词汇提取失败：{str(e)}")
+
+@router.get(
+    "/import-task/{task_id}",
+    summary="查询导入任务状态",
+    description="前端轮询此端点获取异步导入任务的进度和结果。",
+)
+async def get_import_task_status(task_id: str):
+    """Poll import task status."""
+    task = _import_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期。")
+
+    response = {
+        "status": task["status"],
+        "progress": task["progress"],
+        "current_chunk": task["current_chunk"],
+        "total_chunks": task["total_chunks"],
+        "message": task["message"],
+    }
+
+    if task["status"] == "done":
+        response["words"] = task["words"]
+        # 清理已完成的任务（延迟 60 秒）
+        asyncio.get_event_loop().call_later(60, lambda: _import_tasks.pop(task_id, None))
+
+    if task["status"] == "error":
+        response["error"] = task["error"]
+        asyncio.get_event_loop().call_later(60, lambda: _import_tasks.pop(task_id, None))
+
+    return response
 
 
 @router.post(
@@ -575,6 +978,69 @@ def batch_create_vocab(
 
     db.commit()
     return {"imported": imported, "skipped": skipped, "total": len(items)}
+
+
+@router.get(
+    "/scope-stats",
+    summary="备考范围词汇统计",
+    description="返回用户当前备考范围内的词汇总数、已学习数和已掌握数。",
+)
+def get_scope_stats(request: FastAPIRequest, db=Depends(get_db)):
+    # Get user exam_type from profile
+    exam_type = "cet6"  # default
+    try:
+        user = getattr(request.state, "user", None)
+        if user:
+            profile = get_user_profile(user["id"])
+            exam_type = profile.get("exam_type", "cet6") or "cet6"
+    except Exception:
+        pass
+
+    # Get target range info
+    range_row = db.execute(
+        "SELECT id, display_name, total_count, description FROM target_ranges WHERE id = ?",
+        (exam_type,)
+    ).fetchone()
+
+    if not range_row:
+        return {
+            "scope_id": exam_type,
+            "scope_name": exam_type,
+            "total": 0,
+            "learned": 0,
+            "mastered": 0,
+            "description": "",
+        }
+
+    total = range_row["total_count"] or 0
+    scope_name = range_row["display_name"]
+    description = range_row["description"] or ""
+
+    # Count how many scope words are in user's vocabulary
+    learned = 0
+    mastered = 0
+    try:
+        learned_row = db.execute(
+            "SELECT COUNT(*) FROM vocabulary_items"
+        ).fetchone()
+        learned = int(learned_row[0]) if learned_row and learned_row[0] else 0
+
+        mastered_row = db.execute("""
+            SELECT COUNT(*) FROM vocabulary_items v
+            INNER JOIN vocabulary_srs_states s ON s.vocab_id = v.id AND s.is_mastered = 1
+        """).fetchone()
+        mastered = int(mastered_row[0]) if mastered_row and mastered_row[0] else 0
+    except Exception:
+        pass
+
+    return {
+        "scope_id": exam_type,
+        "scope_name": scope_name,
+        "total": total,
+        "learned": learned,
+        "mastered": mastered,
+        "description": description,
+    }
 
 
 @router.get(
@@ -728,3 +1194,4 @@ def export_vocab(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename=vocab_export.docx; filename*=UTF-8''{encoded_name}"}
     )
+

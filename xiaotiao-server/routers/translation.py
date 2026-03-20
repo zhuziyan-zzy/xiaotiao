@@ -4,7 +4,6 @@ import uuid
 import json
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request, Depends, Query
-from sqlalchemy import text
 from schemas import TranslationRequest, TranslationResponse
 from services.prompt_engine import prompt_engine
 from db.auth_db import get_user_profile
@@ -50,6 +49,8 @@ async def run_translation(req: TranslationRequest, request: Request, db=Depends(
                 "direction": req.direction,
                 "source_text": req.source_text,
                 "user_translation": req.user_translation or "",
+                "specialties": user_profile.get("specialty", []) if isinstance(user_profile.get("specialty"), list) else ([user_profile.get("specialty")] if user_profile.get("specialty") else []),
+                "interest_tags": user_profile.get("interest_tags", []) or [],
             },
         )
     except Exception as e:
@@ -60,28 +61,30 @@ async def run_translation(req: TranslationRequest, request: Request, db=Depends(
         )
 
     # V2.1: 自动保存翻译历史
+    history_id = None
     try:
         history_id = str(uuid.uuid4())
         result_data = response.model_dump() if hasattr(response, 'model_dump') else response
         db.execute(
-            text("""
-                INSERT INTO translation_history (id, source_text, direction, result_json, created_at)
-                VALUES (:id, :src, :dir, :res, :now)
-            """),
-            {
-                "id": history_id,
-                "src": req.source_text[:2000],  # 截断防止过大
-                "dir": req.direction,
-                "res": json.dumps(result_data, ensure_ascii=False, default=str),
-                "now": datetime.now().isoformat(),
-            },
+            """INSERT INTO translation_history (id, source_text, direction, result_json, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                history_id,
+                req.source_text[:2000],
+                req.direction,
+                json.dumps(result_data, ensure_ascii=False, default=str),
+                datetime.now().isoformat(),
+            ),
         )
         db.commit()
-        # 在响应中附加 history_id（TranslationResponse 可能不包含此字段，放 header 或忽略）
     except Exception:
         pass  # 保存历史失败不影响正常响应
 
-    return response
+    # Return response with history_id for annotation binding
+    result = response.model_dump() if hasattr(response, 'model_dump') else dict(response)
+    if history_id:
+        result["history_id"] = history_id
+    return result
 
 
 # ── 翻译历史 ──────────────────────────────
@@ -96,21 +99,22 @@ def get_translation_history(
     db=Depends(get_db),
 ):
     offset = (page - 1) * size
-    total = db.execute(text("SELECT COUNT(*) FROM translation_history")).scalar() or 0
+    total_row = db.execute("SELECT COUNT(*) FROM translation_history").fetchone()
+    total = total_row[0] if total_row else 0
     rows = db.execute(
-        text("SELECT * FROM translation_history ORDER BY created_at DESC LIMIT :lim OFFSET :off"),
-        {"lim": size, "off": offset},
+        "SELECT * FROM translation_history ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (size, offset),
     ).fetchall()
     return {
         "total": total,
         "page": page,
         "items": [
             {
-                "id": r.id,
-                "source_text": r.source_text[:100] + ("..." if len(r.source_text) > 100 else ""),
-                "source_text_full": r.source_text,
-                "direction": r.direction,
-                "created_at": r.created_at,
+                "id": r['id'],
+                "source_text": r['source_text'][:100] + ("..." if len(r['source_text']) > 100 else ""),
+                "source_text_full": r['source_text'],
+                "direction": r['direction'],
+                "created_at": r['created_at'],
             }
             for r in rows
         ],
@@ -123,22 +127,22 @@ def get_translation_history(
 )
 def get_translation_detail(history_id: str, db=Depends(get_db)):
     row = db.execute(
-        text("SELECT * FROM translation_history WHERE id = :id"),
-        {"id": history_id},
+        "SELECT * FROM translation_history WHERE id = ?",
+        (history_id,),
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="翻译记录不存在")
     result = None
     try:
-        result = json.loads(row.result_json) if row.result_json else None
+        result = json.loads(row['result_json']) if row['result_json'] else None
     except Exception:
-        result = row.result_json
+        result = row['result_json']
     return {
-        "id": row.id,
-        "source_text": row.source_text,
-        "direction": row.direction,
+        "id": row['id'],
+        "source_text": row['source_text'],
+        "direction": row['direction'],
         "result": result,
-        "created_at": row.created_at,
+        "created_at": row['created_at'],
     }
 
 
@@ -147,8 +151,8 @@ def get_translation_detail(history_id: str, db=Depends(get_db)):
     summary="删除翻译记录",
 )
 def delete_translation_history(history_id: str, db=Depends(get_db)):
-    res = db.execute(text("DELETE FROM translation_history WHERE id = :id"), {"id": history_id})
-    if res.rowcount == 0:
+    cursor = db.execute("DELETE FROM translation_history WHERE id = ?", (history_id,))
+    if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="翻译记录不存在")
     db.commit()
     return {"status": "ok"}

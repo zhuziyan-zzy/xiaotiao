@@ -1,6 +1,7 @@
 // V2.1 Translation History Page
 import { getTranslationHistory, deleteTranslationHistory } from '../api.js';
 import { escapeHtml } from '../utils/sanitize.js';
+import { initAnnotationContext, restoreAnnotations, renderAnnotationPanel } from '../components/annotation_manager.js';
 
 export function renderTranslationHistoryPage() {
   return `
@@ -122,22 +123,65 @@ export async function initTranslationHistoryPage() {
       const detail = await getTranslationDetail(id);
       const result = detail.result;
 
-      let html = `<div class="translation-detail" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(128,128,128,0.2);">`;
+      let html = `<div class="translation-detail" data-ann-content-type="translation" data-ann-content-id="${id}" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(128,128,128,0.2);">`;
+
       html += `<div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;"><strong>原文:</strong></div>`;
       html += `<div style="color:var(--text-primary);font-size:0.88rem;margin-bottom:12px;white-space:pre-wrap;">${escapeHtml(detail.source_text)}</div>`;
 
-      if (result && result.translations) {
-        result.translations.forEach(t => {
+      // Render translation variants
+      const variants = result?.variants || result?.translations || [];
+      if (Array.isArray(variants) && variants.length) {
+        const STYLE_COLORS = { literal: '#60a5fa', legal: '#a78bfa', plain: '#34d399' };
+        variants.forEach(v => {
+          const color = STYLE_COLORS[v.style] || 'var(--text-accent)';
           html += `
-            <div style="margin-bottom:8px;">
-              <div style="font-size:0.75rem;color:var(--text-accent);font-weight:600;margin-bottom:2px;">${escapeHtml(t.style_label || t.style || '')}</div>
-              <div style="color:var(--text-primary);font-size:0.88rem;white-space:pre-wrap;">${escapeHtml(t.text || '')}</div>
-            </div>
-          `;
+            <div style="margin-bottom:10px;padding:10px 14px;background:rgba(255,255,255,0.03);border-radius:10px;border-left:3px solid ${color};">
+              <div style="font-size:0.75rem;font-weight:700;color:${color};margin-bottom:4px;">${escapeHtml(v.label || v.style_label || v.style || '')}</div>
+              <div style="color:var(--text-primary);font-size:0.88rem;line-height:1.5;white-space:pre-wrap;">${escapeHtml(v.text || '')}</div>
+            </div>`;
         });
       }
+
+      // Render key terms
+      if (result?.terms && result.terms.length) {
+        html += '<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.02);border-radius:8px;">';
+        html += '<div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:4px;">📚 关键术语</div>';
+        result.terms.forEach(t => {
+          html += `<div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:2px;"><b>${escapeHtml(t.term || '')}</b>: ${escapeHtml(t.definition_zh || '')}</div>`;
+        });
+        html += '</div>';
+      }
+
+      // Render notes
+      if (result?.notes && result.notes.length) {
+        html += '<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.02);border-radius:8px;">';
+        html += '<div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:4px;">💡 翻译提示</div>';
+        result.notes.forEach(n => {
+          html += `<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:2px;">• ${escapeHtml(n)}</div>`;
+        });
+        html += '</div>';
+      }
+
+      // Render common errors
+      if (result?.common_errors && result.common_errors.length) {
+        html += '<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.02);border-radius:8px;">';
+        html += '<div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:4px;">⚠️ 常见翻译错误</div>';
+        result.common_errors.forEach(e => {
+          html += `<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:2px;">• ${escapeHtml(e)}</div>`;
+        });
+        html += '</div>';
+      }
+
       html += `</div>`;
       card.insertAdjacentHTML('beforeend', html);
+
+      // Restore annotations on this translation detail
+      const detailEl = card.querySelector('.translation-detail[data-ann-content-type]');
+      if (detailEl) {
+        initAnnotationContext('translation', id, detailEl);
+        restoreAnnotations('translation', id, detailEl);
+        renderAnnotationPanel('translation', id, detailEl);
+      }
     } catch (e) {
       card.insertAdjacentHTML('beforeend', `<div class="translation-detail" style="margin-top:8px;color:var(--text-muted);">加载详情失败</div>`);
     }

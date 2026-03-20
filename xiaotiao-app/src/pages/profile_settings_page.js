@@ -233,6 +233,8 @@ export function initProfileSettingsPage() {
       profile = result.profile || profile;
       localStorage.setItem('zaiyi_profile', JSON.stringify(profile));
       if (window.showToast) window.showToast('画像设置已保存', 'success');
+      // Notify other pages (e.g. topic explore) about profile change
+      window.dispatchEvent(new CustomEvent('profile-updated', { detail: profile }));
       render();
     } catch (e) {
       if (window.showToast) window.showToast('保存失败: ' + e.message, 'error');

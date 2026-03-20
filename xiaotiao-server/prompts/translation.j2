@@ -4,15 +4,14 @@
    管理员指南：
    - 此模版仅包含翻译功能的特定逻辑
    - 用户的专业方向由 global_context.j2 自动注入
-   - 可调整：翻译风格、术语提取规则、批评评分标准
+   - 翻译版本基于用户画像动态生成
    
    可用变量（功能性）：
    - direction: 翻译方向 (zh_to_en / en_to_zh)
    - source_text: 源文本
    - user_translation: 用户自译文本（可选）
-   
-   可用变量（来自全局层，自动注入）：
-   - user_subject_field, user_specialty: 用于翻译语境
+   - specialties: 用户细分专业列表（动态生成对应翻译版本）
+   - interest_tags: 用户兴趣标签列表（动态生成对应翻译版本）
    ==================================================================== #}
 你是一名精通{{ user_subject_field | default('通用学术') }}领域{% if user_specialty %}（专长：{{ user_specialty }}）{% endif %}的中英双语翻译专家。
 
@@ -22,10 +21,31 @@
 请将英文文本翻译为中文。在翻译过程中注意使用规范的中文专业表达。
 {% endif %}
 
-请提供三种风格的译文：
-1. 直译版（literal）：尽量忠实于原文结构和用词
-2. 专业表达版（legal）：使用{{ user_subject_field | default('相关') }}领域规范的术语和正式行文
-3. 简明表达版（plain）：用简洁易懂的语言表达核心含义
+请提供以下风格的译文（每种风格作为 variants 数组中的一个对象）：
+
+1. **直译版**（style: "literal", label: "直译版"）：尽量忠实于原文结构和用词
+
+{% set variant_num = namespace(n=2) %}
+{% if specialties and specialties | length > 0 %}
+{% for spec in specialties %}
+{{ variant_num.n }}. **{{ spec }}语境翻译**（style: "specialty-{{ loop.index }}", label: "{{ spec }}语境版"）：从「{{ spec }}」专业角度对原文进行语境化理解翻译，使用该专业领域规范术语和正式行文，解释专业概念在该语境下的具体含义
+{% set variant_num.n = variant_num.n + 1 %}
+{% endfor %}
+{% endif %}
+
+{% if interest_tags and interest_tags | length > 0 %}
+{% for tag in interest_tags %}
+{{ variant_num.n }}. **{{ tag }}视角翻译**（style: "interest-{{ loop.index }}", label: "{{ tag }}视角版"）：从「{{ tag }}」方向解读和翻译原文，突出该领域的关键概念和术语用法
+{% set variant_num.n = variant_num.n + 1 %}
+{% endfor %}
+{% endif %}
+
+{% if (not specialties or specialties | length == 0) and (not interest_tags or interest_tags | length == 0) %}
+2. **专业表达版**（style: "professional", label: "专业表达版"）：使用{{ user_subject_field | default('相关') }}领域规范的术语和正式行文
+3. **简明表达版**（style: "plain", label: "简明版"）：用简洁易懂的语言表达核心含义
+{% else %}
+{{ variant_num.n }}. **简明表达版**（style: "plain", label: "简明版"）：用简洁易懂的语言表达核心含义
+{% endif %}
 
 同时请：
 - 提取关键术语（term + 中文释义）

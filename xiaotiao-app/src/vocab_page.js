@@ -5,12 +5,7 @@ import { getAuthToken } from './auth.js';
 export function renderVocabPage() {
     return `
     <div class="vocab-shell">
-      <div class="page-header__badge" style="margin-bottom:12px;display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:var(--glass-bg);border-radius:20px;font-size:0.85rem;color:var(--text-secondary);">
-        <span class="nav-dot" style="background:var(--accent);width:8px;height:8px;border-radius:50%;display:inline-block;"></span>
-        模块 · 生词本
-      </div>
-      <h1 style="color:var(--text-primary);font-size:1.5rem;font-weight:700;margin-bottom:4px;">我的生词本</h1>
-      <p style="color:var(--text-secondary);margin-bottom:20px;font-size:0.9rem;">管理词汇库，间隔重复高效学习。</p>
+      <h1 style="color:var(--text-primary);font-size:1.25rem;font-weight:700;margin-bottom:16px;">📖 我的生词本</h1>
 
       <!-- Stats Row -->
       <div class="vocab-stats-row" id="vocab-stats-container">
@@ -41,39 +36,46 @@ export function renderVocabPage() {
       </div>
 
       <!-- Actions -->
-      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;align-items:center;">
-        <button class="btn btn--primary" id="btn-add-word" style="padding:6px 14px;font-size:0.85rem;">
-          <span class="material-symbols-rounded" style="font-size:16px;">add</span> 添加新词
-        </button>
-        <button class="btn btn--secondary" id="btn-upload-vocab" style="padding:6px 14px;font-size:0.85rem;">
-          <span class="material-symbols-rounded" style="font-size:16px;">upload_file</span> 上传词汇文件
-        </button>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn--primary" id="btn-add-word" style="padding:5px 12px;font-size:0.82rem;">＋ 添加新词</button>
+        <button class="btn btn--secondary" id="btn-upload-vocab" style="padding:5px 12px;font-size:0.82rem;">📄 上传词汇文件</button>
         <input type="file" id="vocab-file-input" style="display:none;" accept=".txt,.md,.csv,.xlsx,.xls,.docx,.doc,.png,.jpg,.jpeg">
       </div>
 
       <!-- Batch Actions Bar -->
-      <div id="vocab-batch-bar" style="display:none;padding:10px 16px;margin-bottom:12px;background:var(--glass-bg);border:1px solid rgba(88,86,214,0.3);border-radius:12px;align-items:center;gap:12px;">
-        <span style="color:var(--text-primary);font-size:0.9rem;font-weight:600;" id="batch-count-label">已选 0 项</span>
-        <button class="btn btn--primary btn--sm" id="btn-batch-master" style="padding:4px 12px;font-size:0.82rem;">✅ 批量标为已掌握</button>
-        <button class="btn btn--secondary btn--sm" id="btn-batch-unmaster" style="padding:4px 12px;font-size:0.82rem;">🔄 批量标为未掌握</button>
-        <button class="btn btn--ghost btn--sm" id="btn-batch-cancel" style="padding:4px 12px;font-size:0.82rem;margin-left:auto;">取消选择</button>
+      <div id="vocab-batch-bar" style="display:none;padding:8px 14px;margin-bottom:10px;background:var(--glass-bg);border:1px solid rgba(88,86,214,0.3);border-radius:10px;align-items:center;gap:10px;">
+        <span style="color:var(--text-primary);font-size:0.82rem;font-weight:600;" id="batch-count-label">已选 0 项</span>
+        <button class="btn btn--primary btn--sm" id="btn-batch-master" style="padding:3px 10px;font-size:0.78rem;">✅ 已掌握</button>
+        <button class="btn btn--secondary btn--sm" id="btn-batch-unmaster" style="padding:3px 10px;font-size:0.78rem;">🔄 未掌握</button>
+        <button class="btn btn--ghost btn--sm" id="btn-batch-cancel" style="padding:3px 10px;font-size:0.78rem;margin-left:auto;">取消</button>
       </div>
 
       <div class="vocab-main">
         <!-- Sidebar -->
         <aside class="glass-panel vocab-sidebar">
           <div class="vocab-sidebar__section">
-            <div class="vocab-sidebar__title">分类视图</div>
+            <div class="vocab-sidebar__title">概览</div>
             <button class="vocab-nav-item active" data-filter="all">📚 全部生词</button>
-            <button class="vocab-nav-item" data-filter="today">📅 当日生词本</button>
-            <button class="vocab-nav-item" data-filter="month">📆 当月生词本</button>
-            <button class="vocab-nav-item" data-filter="year">📅 当年生词本</button>
+            <button class="vocab-nav-item" data-filter="today">📅 当日</button>
+            <button class="vocab-nav-item" data-filter="month">📆 当月</button>
           </div>
           <div class="vocab-sidebar__section">
             <div class="vocab-sidebar__title">掌握状态</div>
             <button class="vocab-nav-item" data-filter="mastered">✅ 已掌握</button>
-            <button class="vocab-nav-item" data-filter="unmastered">🔵 未掌握</button>
-            <button class="vocab-nav-item" data-filter="easily_forgotten">⚠️ 易忘生词</button>
+            <button class="vocab-nav-item" data-filter="unmastered">🟢 未掌握</button>
+            <button class="vocab-nav-item" data-filter="easily_forgotten">⚠️ 易忘</button>
+          </div>
+          <div class="vocab-sidebar__section">
+            <div class="vocab-sidebar__title">📋 备考词书</div>
+            <button class="vocab-nav-item" data-filter="scope-words" id="btn-scope-words">📋 <span id="scope-words-label">备考范围</span></button>
+            <div id="scope-words-summary" style="font-size:.7rem;color:var(--text-muted);padding:2px 10px;"></div>
+          </div>
+          <div class="vocab-sidebar__section" id="vocab-wordbooks-section">
+            <div class="vocab-sidebar__title" style="display:flex;justify-content:space-between;align-items:center;">📖 我的词书
+              <button class="btn btn--ghost btn--sm" id="btn-ai-classify" style="font-size:.7rem;padding:2px 8px;" title="AI自动分类未归档词汇">🤖 AI分类</button>
+            </div>
+            <div id="classify-progress" style="display:none;font-size:.7rem;color:var(--text-muted);padding:2px 10px;"></div>
+            <div id="vocab-wordbooks-list" style="display:flex;flex-direction:column;gap:2px;"></div>
           </div>
         </aside>
 
@@ -84,11 +86,9 @@ export function renderVocabPage() {
               <input type="text" id="vocab-search" class="input-field" placeholder="🔍 搜索生词...">
             </div>
             <div class="input-wrapper" style="width:160px;">
-              <select id="vocab-domain-filter" class="input-field">
+              <select id="vocab-domain-filter" class="input-field" style="font-size:0.82rem;padding:6px 10px;">
                 <option value="">所有领域</option>
                 <option value="general">通用</option>
-                <option value="international arbitration">国际仲裁</option>
-                <option value="data governance">数据治理</option>
               </select>
             </div>
           </div>
@@ -100,14 +100,10 @@ export function renderVocabPage() {
               <span id="vocab-date-label" style="color:var(--text-primary);font-weight:600;font-size:0.9rem;min-width:120px;text-align:center;"></span>
               <button class="btn btn--ghost btn--sm" id="btn-date-next" style="font-size:0.8rem;padding:4px 10px;"><span id="next-label"></span> ▶</button>
             </div>
-            <button class="btn btn--secondary btn--sm" id="btn-download-vocab" style="margin-left:auto;font-size:0.8rem;padding:4px 10px;">
-              <span class="material-symbols-rounded" style="font-size:14px;">download</span> 导出Word
-            </button>
+            <button class="btn btn--secondary btn--sm" id="btn-download-vocab" style="margin-left:auto;font-size:0.78rem;padding:3px 10px;">📥 导出Word</button>
           </div>
           <div id="vocab-no-date-download" style="display:flex;justify-content:flex-end;margin-bottom:8px;">
-            <button class="btn btn--secondary btn--sm" id="btn-download-vocab-all" style="font-size:0.8rem;padding:4px 10px;">
-              <span class="material-symbols-rounded" style="font-size:14px;">download</span> 导出Word
-            </button>
+            <button class="btn btn--secondary btn--sm" id="btn-download-vocab-all" style="font-size:0.78rem;padding:3px 10px;">📥 导出Word</button>
           </div>
 
           <div class="glass-table-wrap">
@@ -144,12 +140,16 @@ export function renderVocabPage() {
 
     <!-- Upload Progress Overlay -->
     <div id="modal-upload-progress" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(10px);z-index:1001;align-items:center;justify-content:center;">
-      <div class="glass-panel" style="width:420px;padding:40px;border-radius:20px;text-align:center;">
+      <div class="glass-panel" style="width:460px;padding:40px;border-radius:20px;text-align:center;">
         <div style="margin-bottom:20px;">
           <span class="material-symbols-rounded" style="font-size:48px;color:var(--accent);animation:spin 1.2s linear infinite;">progress_activity</span>
         </div>
-        <h3 style="color:var(--text-primary);font-size:1.3rem;margin-bottom:12px;" id="upload-progress-title">正在解析文件...</h3>
-        <p style="color:var(--text-muted);font-size:0.9rem;" id="upload-progress-desc">AI 正在识别词汇，请稍候</p>
+        <h3 style="color:var(--text-primary);font-size:1.3rem;margin-bottom:8px;" id="upload-progress-title">正在解析文件...</h3>
+        <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:20px;" id="upload-progress-desc">AI 正在识别词汇，请稍候</p>
+        <div style="background:rgba(255,255,255,0.08);border-radius:10px;height:8px;overflow:hidden;margin-bottom:8px;">
+          <div id="upload-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#a78bfa);border-radius:10px;transition:width 0.5s ease;"></div>
+        </div>
+        <p style="color:var(--text-muted);font-size:0.8rem;" id="upload-progress-percent">0%</p>
       </div>
     </div>
 
@@ -236,11 +236,94 @@ export function renderVocabPage() {
 let currentVocabPage = 1;
 let currentFilter = 'all';
 let currentDate = null;
+let currentDomain = '';
+
+// ── Word Books (词书) ──────────────────────
+const SPECIALTY_LABELS = {
+    'international-law': '国际法', 'commercial-law': '商法', 'constitutional-law': '宪法学',
+    'criminal-law': '刑法学', 'ip-law': '知识产权法', 'financial-law': '金融法',
+    'environmental-law': '环境法', 'administrative-law': '行政法', 'civil-law': '民法',
+    'procedural-law': '诉讼法', 'accounting': '会计', 'banking': '银行',
+    'securities': '证券', 'insurance': '保险', 'fintech': '金融科技',
+    'ai': '人工智能', 'cybersecurity': '网络安全', 'data-science': '数据科学',
+    'software-engineering': '软件工程', 'clinical': '临床医学', 'pharmacy': '药学',
+    'general': '通用',
+};
+
+function getHiddenWordBooks() {
+    try { return JSON.parse(localStorage.getItem('hidden_wordbooks') || '[]'); } catch { return []; }
+}
+
+function hideWordBook(domain) {
+    const hidden = getHiddenWordBooks();
+    if (!hidden.includes(domain)) { hidden.push(domain); localStorage.setItem('hidden_wordbooks', JSON.stringify(hidden)); }
+}
+
+function unhideWordBook(domain) {
+    const hidden = getHiddenWordBooks().filter(d => d !== domain);
+    localStorage.setItem('hidden_wordbooks', JSON.stringify(hidden));
+}
+
+async function loadWordBooks() {
+    const list = document.getElementById('vocab-wordbooks-list');
+    if (!list) return;
+
+    try {
+        const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+        const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
+        const res = await authFetch(`${API_BASE}/user/profile`);
+        if (!res.ok) { list.innerHTML = '<div style="color:var(--text-muted);font-size:0.78rem;padding:4px 8px;">请先设置画像</div>'; return; }
+        const data = await res.json();
+        const profile = data.profile || {};
+
+        // Collect all domains from specialty + interest_tags
+        const domains = new Set();
+        (profile.specialty || []).forEach(s => domains.add(s));
+        (profile.interest_tags || []).forEach(t => domains.add(t));
+        domains.add('general');
+
+        const hidden = getHiddenWordBooks();
+        const visibleDomains = [...domains].filter(d => !hidden.includes(d));
+
+        if (visibleDomains.length === 0) {
+            list.innerHTML = '<div style="color:var(--text-muted);font-size:0.78rem;padding:4px 8px;">暂无词书</div>';
+            return;
+        }
+
+        list.innerHTML = visibleDomains.map(domain => {
+            const label = SPECIALTY_LABELS[domain] || domain;
+            const isActive = currentFilter === 'domain' && currentDomain === domain;
+            return `
+              <div style="display:flex;align-items:center;gap:2px;" class="wordbook-item">
+                <button class="vocab-nav-item${isActive ? ' active' : ''}" data-filter="domain" data-domain="${domain}" style="flex:1;text-align:left;font-size:0.82rem;padding:6px 10px;">
+                  📘 ${escapeHtml(label)}
+                </button>
+                <button class="wordbook-del-btn" data-domain="${domain}" title="隐藏此词书" style="background:none;border:none;cursor:pointer;font-size:12px;padding:2px 4px;color:var(--text-muted);opacity:0.5;transition:opacity 0.2s;">×</button>
+              </div>`;
+        }).join('');
+
+        // Also update the domain filter dropdown
+        const domainSelect = document.getElementById('vocab-domain-filter');
+        if (domainSelect) {
+            const currentVal = domainSelect.value;
+            domainSelect.innerHTML = '<option value="">所有领域</option>';
+            [...domains].forEach(d => {
+                const label = SPECIALTY_LABELS[d] || d;
+                domainSelect.innerHTML += `<option value="${d}"${d === currentVal ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+            });
+        }
+    } catch (e) {
+        console.error('loadWordBooks error:', e);
+    }
+}
 
 export async function initVocabPage() {
     window.__vocabRefreshStats = loadVocabStats;
     await loadVocabStats();
+    await loadWordBooks();
     await loadVocabList();
+    loadScopeWordsSummary();
+    loadClassifyStatus();
 
     document.getElementById('btn-add-word').addEventListener('click', () => {
         document.getElementById('modal-add-word').style.display = 'flex';
@@ -267,11 +350,25 @@ export async function initVocabPage() {
         updateImportCount();
     });
 
+    // AI Classify button
+    document.getElementById('btn-ai-classify').addEventListener('click', runAIClassify);
+
     // Sidebar nav
     document.querySelector('.vocab-sidebar').addEventListener('click', (e) => {
+        const delBtn = e.target.closest('.wordbook-del-btn');
+        if (delBtn) {
+            const domain = delBtn.dataset.domain;
+            hideWordBook(domain);
+            loadWordBooks();
+            if (currentFilter === 'domain' && currentDomain === domain) {
+                currentFilter = 'all'; currentDomain = ''; loadVocabList();
+            }
+            return;
+        }
         const btn = e.target.closest('.vocab-nav-item');
         if (!btn) return;
         currentFilter = btn.dataset.filter;
+        currentDomain = btn.dataset.domain || '';
         // Set default date for time-based filters
         if (currentFilter === 'today') currentDate = new Date().toISOString().split('T')[0];
         else if (currentFilter === 'month') currentDate = new Date().toISOString().slice(0, 7);
@@ -279,8 +376,17 @@ export async function initVocabPage() {
         currentVocabPage = 1;
         document.querySelectorAll('.vocab-nav-item').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        // If selecting a domain word book, also select it in the dropdown
+        if (currentFilter === 'domain') {
+            const sel = document.getElementById('vocab-domain-filter');
+            if (sel) sel.value = currentDomain;
+        }
         updateDateNavVisibility();
-        loadVocabList();
+        if (currentFilter === 'scope-words') {
+            loadScopeWordsView();
+        } else {
+            loadVocabList();
+        }
     });
 
     // Inline date nav
@@ -295,7 +401,11 @@ export async function initVocabPage() {
     let searchTimeout;
     document.getElementById('vocab-search').addEventListener('input', () => {
         clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => { currentVocabPage = 1; loadVocabList(); }, 500);
+        searchTimeout = setTimeout(() => {
+            currentVocabPage = 1;
+            if (currentFilter === 'scope-words') loadScopeWordsView();
+            else loadVocabList();
+        }, 500);
     });
     document.getElementById('vocab-domain-filter').addEventListener('change', () => {
         currentVocabPage = 1; loadVocabList();
@@ -303,10 +413,10 @@ export async function initVocabPage() {
 
     // Pagination
     document.getElementById('btn-prev-page').addEventListener('click', () => {
-        if (currentVocabPage > 1) { currentVocabPage--; loadVocabList(); }
+        if (currentVocabPage > 1) { currentVocabPage--; if (currentFilter === 'scope-words') loadScopeWordsView(); else loadVocabList(); }
     });
     document.getElementById('btn-next-page').addEventListener('click', () => {
-        currentVocabPage++; loadVocabList();
+        currentVocabPage++; if (currentFilter === 'scope-words') loadScopeWordsView(); else loadVocabList();
     });
 
     // Select-all checkbox
@@ -329,6 +439,12 @@ export async function initVocabPage() {
         document.getElementById('vocab-select-all').checked = false;
         updateBatchBar();
     });
+
+    // Listen for profile changes to refresh scope
+    window.addEventListener('profile-updated', () => {
+        loadScopeWordsSummary();
+        if (currentFilter === 'scope-words') loadScopeWordsView();
+    });
 }
 
 // ── Mastery Toggle ────────────────────────
@@ -344,7 +460,7 @@ window.__toggleMastery = async (id, setMastered) => {
         });
         if (!res.ok) throw new Error('Failed');
         showToast(setMastered ? '已标为掌握 ✅' : '已标为未掌握', 'success');
-        loadVocabStats();
+        loadVocabStats(); loadScopeWordsSummary();
         loadVocabList();
     } catch (e) {
         showToast('操作失败: ' + e.message, 'error');
@@ -380,7 +496,7 @@ async function batchSetMastery(mastered) {
         showToast(`已${mastered ? '标为掌握' : '取消掌握'} ${data.updated} 个词汇`, 'success');
         document.getElementById('vocab-select-all').checked = false;
         updateBatchBar();
-        loadVocabStats();
+        loadVocabStats(); loadScopeWordsSummary();
         loadVocabList();
     } catch (e) {
         showToast('批量操作失败: ' + e.message, 'error');
@@ -507,12 +623,14 @@ async function loadVocabList() {
     tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-muted);">词汇加载中...</td></tr>';
 
     const search = document.getElementById('vocab-search').value;
-    const domain = document.getElementById('vocab-domain-filter').value;
+    const dropdownDomain = document.getElementById('vocab-domain-filter').value;
+    // Use currentDomain if filtering by word book, otherwise use dropdown
+    const domain = (currentFilter === 'domain') ? currentDomain : dropdownDomain;
 
     let url = `/vocab?page=${currentVocabPage}&limit=15`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (domain) url += `&domain=${encodeURIComponent(domain)}`;
-    if (currentFilter && currentFilter !== 'all') url += `&filter=${currentFilter}`;
+    if (currentFilter && currentFilter !== 'all' && currentFilter !== 'domain') url += `&filter=${currentFilter}`;
     if (currentDate) url += `&date=${currentDate}`;
 
     try {
@@ -546,13 +664,9 @@ async function loadVocabList() {
                     <td style="padding:14px 20px;">
                         ${getStatusBadge(item)}
                     </td>
-                    <td style="padding:14px 20px;white-space:nowrap;">
-                        <button class="icon-btn" onclick="window.__toggleMastery('${item.id}', ${!item.is_mastered})" title="${item.is_mastered ? '取消掌握' : '标为已掌握'}" style="background:transparent;border:none;cursor:pointer;color:${item.is_mastered ? '#4ade80' : 'var(--text-muted)'};">
-                            <span class="material-symbols-rounded" style="font-size:20px;">${item.is_mastered ? 'check_circle' : 'radio_button_unchecked'}</span>
-                        </button>
-                        <button class="icon-btn" onclick="window.__deleteVocab('${item.id}')" style="background:transparent;border:none;cursor:pointer;color:var(--text-muted);">
-                            <span class="material-symbols-rounded" style="font-size:20px;">delete</span>
-                        </button>
+                    <td style="padding:10px 12px;white-space:nowrap;">
+                        <button class="mastery-toggle mastery-toggle--table ${item.is_mastered ? 'mastery-toggle--on' : 'mastery-toggle--off'}" onclick="window.__toggleMastery('${item.id}', ${!item.is_mastered})" title="${item.is_mastered ? '取消掌握' : '标为已掌握'}"><span class="mastery-toggle__icon">${item.is_mastered ? '✓' : ''}</span></button>
+                        <button style="background:transparent;border:none;cursor:pointer;font-size:16px;padding:2px 4px;vertical-align:middle;margin-left:4px;" onclick="window.__deleteVocab('${item.id}')" title="删除">🗑</button>
                     </td>
                 </tr>
             `).join('');
@@ -624,7 +738,7 @@ async function submitNewWord() {
         } else {
             showToast(`已添加 "${word}"`, 'success');
         }
-        loadVocabStats();
+        loadVocabStats(); loadScopeWordsSummary(); loadWordBooks();
         loadVocabList();
     } catch (e) {
         showToast(e.message, 'error');
@@ -642,17 +756,48 @@ async function handleFileUpload(e) {
     if (!file) return;
     e.target.value = '';
 
-    const TEXT_EXTENSIONS = ['.txt', '.md', '.csv'];
-    const fileName = file.name.toLowerCase();
-    const isTextFile = TEXT_EXTENSIONS.some(ext => fileName.endsWith(ext));
-
+    // 显示进度弹窗
     document.getElementById('modal-upload-progress').style.display = 'flex';
-    document.getElementById('upload-progress-title').textContent = '正在解析文件...';
-    document.getElementById('upload-progress-desc').textContent = isTextFile ? '正在读取并分析文本内容' : 'AI 正在识别词汇，请稍候';
+    document.getElementById('upload-progress-title').textContent = '正在上传文件...';
+    document.getElementById('upload-progress-desc').textContent = '准备中';
+    document.getElementById('upload-progress-bar').style.width = '0%';
+    document.getElementById('upload-progress-percent').textContent = '0%';
 
     try {
-        const words = await uploadFileToServer(file);
-        if (!words || words.length === 0) { showToast('未能从文件中识别出词汇', 'warning'); return; }
+        // 1. 上传文件，获取 task_id
+        const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+        const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('domain', 'general');
+
+        document.getElementById('upload-progress-title').textContent = '正在上传文件...';
+        const res = await authFetch(`${API_BASE}/vocab/import-file`, { method: 'POST', body: formData });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `上传失败 (${res.status})`);
+        }
+        const uploadResult = await res.json();
+
+        // 兼容旧版接口（如果直接返回 words）
+        if (uploadResult.words) {
+            if (uploadResult.words.length === 0) { showToast('未能从文件中识别出词汇', 'warning'); return; }
+            window.__pendingImportWords = uploadResult.words;
+            showImportPreview(uploadResult.words);
+            return;
+        }
+
+        const taskId = uploadResult.task_id;
+        if (!taskId) throw new Error('未获取到任务 ID');
+
+        // 2. 轮询进度
+        document.getElementById('upload-progress-title').textContent = 'AI 正在提取词汇...';
+        const words = await pollImportTask(API_BASE, taskId);
+
+        if (!words || words.length === 0) {
+            showToast('未能从文件中识别出词汇', 'warning');
+            return;
+        }
         window.__pendingImportWords = words;
         showImportPreview(words);
     } catch (err) {
@@ -662,16 +807,41 @@ async function handleFileUpload(e) {
     }
 }
 
-async function uploadFileToServer(file) {
-    const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-    const API_BASE = RAW_API_BASE.replace(/\/api\/v1\/?$/, '');
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('domain', 'general');
-    const res = await authFetch(`${API_BASE}/vocab/import-file`, { method: 'POST', body: formData });
-    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || `上传失败 (${res.status})`); }
-    const data = await res.json();
-    return data.words || [];
+async function pollImportTask(apiBase, taskId) {
+    const POLL_INTERVAL = 1500; // 1.5 秒
+    const MAX_POLLS = 200;      // 最多等 5 分钟
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL));
+
+        try {
+            const res = await authFetch(`${apiBase}/vocab/import-task/${taskId}`);
+            if (!res.ok) throw new Error('查询任务状态失败');
+            const task = await res.json();
+
+            // 更新进度 UI
+            const progress = task.progress || 0;
+            document.getElementById('upload-progress-bar').style.width = `${progress}%`;
+            document.getElementById('upload-progress-percent').textContent = `${progress}%`;
+            document.getElementById('upload-progress-desc').textContent = task.message || '处理中...';
+
+            if (task.total_chunks > 1) {
+                document.getElementById('upload-progress-title').textContent =
+                    `AI 正在提取词汇 (${task.current_chunk}/${task.total_chunks})`;
+            }
+
+            if (task.status === 'done') {
+                return task.words || [];
+            }
+            if (task.status === 'error') {
+                throw new Error(task.error || '提取失败');
+            }
+        } catch (err) {
+            if (err.message === '查询任务状态失败') continue; // 网络波动，继续重试
+            throw err;
+        }
+    }
+    throw new Error('任务超时，请重试');
 }
 
 function showImportPreview(words) {
@@ -723,7 +893,7 @@ async function confirmImportWords() {
         document.getElementById('modal-import-preview').style.display = 'none';
         window.__pendingImportWords = [];
         showToast(`成功导入 ${result.imported} 个词汇${result.skipped > 0 ? `，跳过 ${result.skipped} 个重复词` : ''}`, 'success');
-        loadVocabStats(); loadVocabList();
+        loadVocabStats(); loadVocabList(); loadScopeWordsSummary(); loadWordBooks();
     } catch (err) {
         showToast(`导入失败：${err.message}`, 'error');
     } finally {
@@ -748,9 +918,145 @@ window.__deleteVocab = async (id) => {
             const res = await authFetch(`${API_BASE}/vocab/${id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('删除失败');
             showToast('术语已删除', 'success');
-            loadVocabStats(); loadVocabList();
+            loadVocabStats(); loadVocabList(); loadScopeWordsSummary(); loadWordBooks();
         } catch (e) {
             showToast('删除发生错误', 'error');
         }
     }
 };
+
+// ── Scope Words View ──────────────────────
+
+async function loadScopeWordsSummary() {
+    try {
+        const data = await getJSON('/vocab/scope-stats');
+        if (!data) return;
+        const label = document.getElementById('scope-words-label');
+        if (label) label.textContent = data.scope_name || '备考范围';
+        const summary = document.getElementById('scope-words-summary');
+        if (summary) {
+            const pct = data.total > 0 ? Math.round((data.learned / data.total) * 100) : 0;
+            summary.innerHTML = `已学 ${data.learned}/${data.total} (${pct}%) · 已掌握 ${data.mastered}`;
+        }
+    } catch (e) { /* ignore */ }
+}
+
+async function loadScopeWordsView() {
+    const tbody = document.getElementById('vocab-table-body');
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-muted);">备考词表加载中...</td></tr>';
+
+    const search = document.getElementById('vocab-search')?.value || '';
+    let url = `/vocab/scope-words?page=${currentVocabPage}&limit=30`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+
+    try {
+        const data = await getJSON(url);
+        if (!data || !data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-muted);">还没有学习任何词汇，快去学习吧！</td></tr>';
+            return;
+        }
+
+        // Update header label
+        const label = document.getElementById('scope-words-label');
+        if (label) label.textContent = data.range_name || '备考范围';
+
+        tbody.innerHTML = data.items.map(item => {
+            let statusIcon = '⬜';
+            let statusText = '未学';
+            let statusColor = 'var(--text-muted)';
+            if (item.status === 'mastered') { statusIcon = '✅'; statusText = '已掌握'; statusColor = '#4ade80'; }
+            else if (item.status === 'learned') { statusIcon = '📖'; statusText = '已学'; statusColor = '#60a5fa'; }
+
+            return `
+                <tr style="border-bottom:1px solid rgba(0,0,0,0.04);">
+                    <td style="padding:10px 8px 10px 20px;width:36px;"></td>
+                    <td style="padding:10px 20px;">
+                        <span style="font-weight:600;font-size:1rem;color:var(--text-primary);">${escapeHtml(item.word)}</span>
+                        ${item.frequency_rank ? `<span style="color:var(--text-muted);font-size:0.7rem;margin-left:6px;">#${item.frequency_rank}</span>` : ''}
+                    </td>
+                    <td style="padding:10px 20px;color:var(--text-primary);max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                        ${item.definition_zh || '<span style="color:var(--text-muted);">—</span>'}
+                    </td>
+                    <td style="padding:10px 20px;"></td>
+                    <td style="padding:10px 20px;"></td>
+                    <td style="padding:10px 20px;">
+                        <span style="display:inline-flex;align-items:center;gap:4px;color:${statusColor};font-size:0.85rem;">
+                            ${statusIcon} ${statusText}
+                        </span>
+                    </td>
+                    <td style="padding:10px 12px;"></td>
+                </tr>`;
+        }).join('');
+
+        // Update page info
+        const pageInfo = document.getElementById('vocab-page-info');
+        if (pageInfo) {
+            const start = (data.page - 1) * 30 + Math.min(1, data.items.length);
+            const end = (data.page - 1) * 30 + data.items.length;
+            const targetTotal = data.target_total || data.total;
+            pageInfo.textContent = `第 ${start}-${end} 项 / 共 ${data.total} 词 · 目标 ${targetTotal} · 已掌握 ${data.mastered}`;
+        }
+        const prevBtn = document.getElementById('btn-prev-page');
+        const nextBtn = document.getElementById('btn-next-page');
+        if (prevBtn) prevBtn.disabled = data.page <= 1;
+        if (nextBtn) nextBtn.disabled = data.page >= data.total_pages;
+
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7" style="padding:24px;text-align:center;color:#ef4444;">Error: ${e.message}</td></tr>`;
+    }
+}
+
+// ── AI Domain Classification ──────────────
+
+async function loadClassifyStatus() {
+    try {
+        const data = await getJSON('/vocab/classify-status');
+        const el = document.getElementById('classify-progress');
+        if (!el || !data) return;
+        if (data.total > 0) {
+            const pct = Math.round((data.classified / data.total) * 100);
+            el.style.display = 'block';
+            el.innerHTML = `已分类 ${data.classified}/${data.total} (${pct}%) · 待分类 ${data.pending}`;
+        } else {
+            el.style.display = 'none';
+        }
+    } catch (e) { /* ignore */ }
+}
+
+async function runAIClassify() {
+    const btn = document.getElementById('btn-ai-classify');
+    const progressEl = document.getElementById('classify-progress');
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.textContent = '⏳ 分类中...';
+    progressEl.style.display = 'block';
+    progressEl.textContent = '正在调用AI分类...';
+
+    let totalClassified = 0;
+    let hasMore = true;
+
+    try {
+        while (hasMore) {
+            const result = await postJSON('/vocab/classify', { batch_size: 30 });
+            if (result.status === 'done') {
+                hasMore = false;
+                break;
+            }
+            totalClassified += result.classified_words || 0;
+            const prog = result.progress || {};
+            progressEl.textContent = `已分类 ${prog.classified}/${prog.total} · 本次处理 ${totalClassified} 词`;
+
+            if (prog.pending <= 0) hasMore = false;
+        }
+        showToast(`AI 分类完成，共处理 ${totalClassified} 个词汇`, 'success');
+        loadWordBooks();
+        loadClassifyStatus();
+    } catch (e) {
+        showToast(`AI 分类失败: ${e.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🤖 AI分类';
+    }
+}
+

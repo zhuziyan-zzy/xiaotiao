@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 from db.auth_db import init_auth_db
 from db.database import init_db, run_migrations, get_user_db_path
 from services.auth_service import extract_token, get_user_from_token
-from routers import auth, topic, article, translation, vocab, research, papers, tracker, collections, feedback, admin, profile, notes, ai_test, team
+from routers import auth, topic, article, translation, vocab, research, papers, tracker, collections, feedback, admin, profile, notes, ai_test, team, annotations
 
 try:
     from routers import multimodal
@@ -60,6 +60,7 @@ def on_startup():
         "qwen": "QWEN_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "lanyi": "LANYI_API_KEY",
+        "lemonapi": "LEMONAPI_API_KEY",
     }
     if not provider:
         logger.warning("⚠️  LLM_PROVIDER 未设置，将自动检测或使用 mock 模式")
@@ -168,6 +169,7 @@ app.include_router(profile.router)
 app.include_router(notes.router)
 app.include_router(ai_test.router)
 app.include_router(team.router)
+app.include_router(annotations.router)
 if multimodal:
     app.include_router(multimodal.router)
 

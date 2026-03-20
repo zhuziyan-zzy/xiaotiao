@@ -21,7 +21,7 @@ import { renderTranslationHistoryPage, initTranslationHistoryPage } from './page
 import { isAuthed, logout, getAuthUser } from './auth.js';
 import { initGlobalWordSelector, destroyGlobalWordSelector } from './components/word_selector.js';
 import { initTaskManager } from './components/task_manager.js';
-import { initSidebar } from './components/sidebar.js';
+import { initSidebar, openSidebarWithTranslation } from './components/sidebar.js';
 
 const router = new Router('app');
 
@@ -30,9 +30,8 @@ router.setGuard((path) => {
   // Public pages accessible without login
   const publicPaths = ['/', '/landing', '/login'];
   if (!isAuthed() && !publicPaths.includes(path)) return '/landing';
+  // Authenticated users visiting public/auth pages → go to home
   if (isAuthed() && (path === '/' || path === '/landing' || path === '/login')) {
-    const profile = localStorage.getItem('zaiyi_profile');
-    if (!profile || !JSON.parse(profile).onboarding_completed) return '/onboarding';
     return '/home';
   }
   return null;
@@ -56,11 +55,13 @@ router.register('/research/tracker', renderTrackerPage, initTrackerPage);
 // V2.0: Topic Explorer (renamed route)
 router.register('/explore', renderTopicExplorer, initTopicExplorer);
 
+// V2.1: Vocab Book (promoted to core nav)
+router.register('/vocab', renderVocabPage, initVocabPage);
+
 // V2.0: Settings
 router.register('/settings/profile', renderProfileSettingsPage, initProfileSettingsPage);
 
 // Legacy routes still functional (hidden from nav)
-router.register('/vocab', renderVocabPage, initVocabPage);
 router.register('/progress', renderProgressPage, initProgressPage);
 router.register('/translation', renderTranslationStudio, initTranslationStudio);
 router.register('/translation/history', renderTranslationHistoryPage, initTranslationHistoryPage);
@@ -92,6 +93,18 @@ function initGlobalInteractions() {
 
   // Interactive card tilts in JS for any element requesting it
   // (Currently not implemented, placeholder for future feature)
+
+  // Global term-card click → open sidebar translation
+  document.body.addEventListener('click', (e) => {
+    const termCard = e.target.closest('.term-card[data-term]');
+    if (termCard) {
+      const term = termCard.dataset.term;
+      if (term) {
+        termCard.classList.toggle('expanded');
+        openSidebarWithTranslation(term);
+      }
+    }
+  });
 }
 
 function initAuthActions() {
@@ -127,6 +140,33 @@ function initUserMenu() {
   const nameEl = document.getElementById('dropdown-username');
   if (user && nameEl) {
     nameEl.textContent = user.username || '用户';
+  }
+
+  // Populate global profile badge
+  updateProfileBadge();
+}
+
+function updateProfileBadge() {
+  const badge = document.getElementById('navbar-profile-badge');
+  const textEl = document.getElementById('navbar-profile-text');
+  if (!badge || !textEl) return;
+
+  const profile = JSON.parse(localStorage.getItem('zaiyi_profile') || '{}');
+  const FIELD_MAP = { law: '法学', finance: '金融', cs: '计算机', medicine: '医学', engineering: '工程', humanities: '人文' };
+  const LEVEL_MAP = { cet4: 'CET-4', cet6: 'CET-6', ielts5: '雅思5-6', ielts7: '雅思7+', native: '接近母语' };
+
+  const parts = [];
+  const fields = Array.isArray(profile.subject_field) ? profile.subject_field : (profile.subject_field ? [profile.subject_field] : []);
+  if (fields.length) parts.push(fields.map(f => FIELD_MAP[f] || f).join('·'));
+  if (profile.eng_level) parts.push(LEVEL_MAP[profile.eng_level] || profile.eng_level);
+  const specs = Array.isArray(profile.specialty) ? profile.specialty : [];
+  if (specs.length && specs.length <= 3) parts.push(specs.join('·'));
+
+  if (parts.length) {
+    textEl.textContent = '🎯 ' + parts.join(' | ');
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
   }
 }
 
@@ -412,6 +452,7 @@ router.resolve = function () {
             if (hash.startsWith('/home')) segmentedContainer.classList.add('segmented--home');
             if (hash.startsWith('/research')) segmentedContainer.classList.add('segmented--research');
             if (hash.startsWith('/explore')) segmentedContainer.classList.add('segmented--explore');
+            if (hash.startsWith('/vocab')) segmentedContainer.classList.add('segmented--vocab');
           }
         } else {
           link.classList.remove('active');

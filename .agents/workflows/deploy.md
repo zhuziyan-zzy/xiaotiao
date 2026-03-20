@@ -1,41 +1,48 @@
 ---
-description: how to safely deploy code to the server without losing database data
+description: 安全部署前端/后端代码到服务器
 ---
 
-# Safe Server Deployment Workflow
+# 部署到服务器
 
-// turbo-all
+## ⚠️ 安全规则（绝不违反）
 
-## Steps
+1. **绝不**覆盖服务器上的 `.env` 文件
+2. **绝不**覆盖服务器上的 `db/*.db` 数据库文件
+3. **绝不**覆盖服务器上的 `.venv/` 虚拟环境
+4. **绝不**覆盖服务器上的 `uploads/` 用户上传文件
+5. **绝不**对后端代码使用 `rsync --delete`
+6. 只有前端 `dist/` 目录可以使用 `--delete`（因为是完整构建产物）
 
-1. Pull latest code on server:
+## 部署前端
+
+// turbo
+1. 构建前端（确保 VITE_API_BASE_URL 为空）:
 ```bash
-ssh root@47.103.117.65 "cd /root/xiaotiao-main && git pull origin main"
+cd /Users/zzzzy/Downloads/项目/xiaotiao-main/xiaotiao-app && VITE_API_BASE_URL="" npm run build
 ```
 
-2. Sync backend code (EXCLUDES database files, uploads, and venv):
+2. 同步到服务器（只同步 dist，需要输入密码）:
 ```bash
-ssh root@47.103.117.65 "rsync -av --exclude='.git' --exclude='node_modules' --exclude='venv' --exclude='._*' --exclude='*.db' --exclude='uploads/*' --exclude='__pycache__' /root/xiaotiao-main/xiaotiao-server/ /home/xiaotiao/xiaotiao-server/"
+cd /Users/zzzzy/Downloads/项目/xiaotiao-main && bash deploy/sync.sh frontend
 ```
 
-3. Copy .env config (only if you changed .env settings):
+## 部署后端代码
+
+1. 同步后端代码到服务器:
 ```bash
-ssh root@47.103.117.65 "cp /root/xiaotiao-main/xiaotiao-server/.env /home/xiaotiao/xiaotiao-server/.env"
+cd /Users/zzzzy/Downloads/项目/xiaotiao-main && bash deploy/sync.sh backend
 ```
 
-4. Sync frontend code:
+## 全部部署
+
 ```bash
-ssh root@47.103.117.65 "rsync -av --exclude='.git' --exclude='node_modules' --exclude='._*' /root/xiaotiao-main/xiaotiao-app/ /home/xiaotiao/xiaotiao-app/"
+cd /Users/zzzzy/Downloads/项目/xiaotiao-main && bash deploy/sync.sh all
 ```
 
-5. Restart backend:
-```bash
-ssh root@47.103.117.65 "pkill -f uvicorn; sleep 2; cd /home/xiaotiao/xiaotiao-server && ./venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 3000 &"
-```
+## 注意事项
 
-## CRITICAL SAFETY RULES
-
-> [!CAUTION]
-> NEVER use rsync without `--exclude='*.db'` when syncing to the server.
-> Database files contain all user data and history.
-> The `--exclude='uploads/*'` also protects user-uploaded files.
+- 所有 rsync 命令必须在 **Mac 本地终端**运行，不是在服务器 SSH 里
+- 服务器 IP: `47.103.117.65`
+- 服务器项目路径: `/root/xiaotiao-main/`
+- 后端服务名: `xiaotiao` (systemd)
+- 后端 venv 路径: `/root/xiaotiao-main/xiaotiao-server/.venv/`（注意是 .venv 带点）

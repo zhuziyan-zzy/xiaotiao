@@ -3,6 +3,7 @@
  * Apple-style: subtle selection, floating toolbar follows scroll, spinner loading.
  */
 import { createVocabItem, fetchAPI } from '../api.js';
+import { showHighlightPicker, showAnnotationInput, getAnnotationContext } from './annotation_manager.js';
 
 let _toolbar = null;
 let _conceptPanel = null;
@@ -40,6 +41,12 @@ function createToolbar() {
     <button class="word-selector-bar__btn word-selector-bar__btn--concept" type="button">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       概念解析
+    </button>
+    <button class="word-selector-bar__btn word-selector-bar__btn--highlight" type="button" style="display:none;">
+      🖍️ 高亮
+    </button>
+    <button class="word-selector-bar__btn word-selector-bar__btn--annotate" type="button" style="display:none;">
+      📝 批注
     </button>
   `;
   document.body.appendChild(bar);
@@ -131,15 +138,22 @@ function handleSelectionChange() {
   if (_toolbar) {
     const vocabBtn = _toolbar.querySelector('.word-selector-bar__btn--vocab');
     const conceptBtn = _toolbar.querySelector('.word-selector-bar__btn--concept');
+    const highlightBtn = _toolbar.querySelector('.word-selector-bar__btn--highlight');
+    const annotateBtn = _toolbar.querySelector('.word-selector-bar__btn--annotate');
     const hasEnglish = !!_currentWord || !!_currentWarning;
     if (vocabBtn) vocabBtn.style.display = hasEnglish ? '' : 'none';
     if (conceptBtn) conceptBtn.style.display = hasEnglish ? '' : 'none';
+    // Show highlight/annotate if inside an annotation-enabled container
+    const annCtx = getAnnotationContext(anchorEl);
+    if (highlightBtn) highlightBtn.style.display = annCtx ? '' : 'none';
+    if (annotateBtn) annotateBtn.style.display = annCtx ? '' : 'none';
   }
 
-  // Show toolbar if we have English text OR extra buttons registered
+  // Show toolbar if we have English text OR extra buttons OR annotation context
   const hasExtraBtns = _extraBtns.length > 0;
   const hasEnglish = !!_currentWord || !!_currentWarning;
-  if (!hasEnglish && !hasExtraBtns) { hideToolbar(); return; }
+  const hasAnnCtx = !!getAnnotationContext(anchorEl);
+  if (!hasEnglish && !hasExtraBtns && !hasAnnCtx) { hideToolbar(); return; }
 
   positionToolbar(range);
 }
@@ -421,6 +435,30 @@ export function initGlobalWordSelector() {
     e.preventDefault();
     e.stopPropagation();
     showConceptAnalysis();
+  });
+  _toolbar.querySelector('.word-selector-bar__btn--highlight').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    const anchor = sel.anchorNode?.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : sel.anchorNode;
+    const ctx = getAnnotationContext(anchor);
+    if (!ctx) { window.showToast?.('当前区域不支持标注', 'warning'); return; }
+    const barRect = _toolbar.getBoundingClientRect();
+    hideToolbar();
+    showHighlightPicker(ctx.contentType, ctx.contentId, ctx.container, barRect.right + 8, barRect.top);
+  });
+  _toolbar.querySelector('.word-selector-bar__btn--annotate').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    const anchor = sel.anchorNode?.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : sel.anchorNode;
+    const ctx = getAnnotationContext(anchor);
+    if (!ctx) { window.showToast?.('当前区域不支持批注', 'warning'); return; }
+    const barRect = _toolbar.getBoundingClientRect();
+    hideToolbar();
+    showAnnotationInput(ctx.contentType, ctx.contentId, ctx.container, barRect.right + 8, barRect.top);
   });
 
   // Use selectionchange for reliable first-selection detection
